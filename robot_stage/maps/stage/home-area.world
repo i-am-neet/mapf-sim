@@ -1,0 +1,43 @@
+include "timda.inc"
+
+define floorplan model
+(
+  # sombre, sensible, artistic
+  color "gray30"
+
+  # most maps will need a bounding box
+  boundary 1
+
+  gui_nose 0
+  gui_grid 0
+  gui_move 0
+  gui_outline 0
+  gripper_return 0
+  fiducial_return 0
+  laser_return 1
+)
+
+resolution 0.02
+interval_sim 100  # simulation timestep in milliseconds
+
+window
+(
+  size [ 700.0 700.0 ]
+  center [ 0.0 0.0 ]
+  rotate [ 0.0 0.0 ]
+  scale 60
+)
+
+floorplan
+(
+  name "home-area"
+  bitmap "../home-area.png"
+  size [ 6.0 6.0 0.6 ]
+  pose [  0.0 0.0 0.0 0.0]
+)
+
+# throw in robots
+timda(pose [  2.0  2.0 0.0 0.0 ] name "R1" color "green")
+timda(pose [ -2.0  2.0 0.0 0.0 ] name "R2" color "red")
+timda(pose [  2.0 -2.0 0.0 0.0 ] name "R3" color "blue")
+timda(pose [ -2.0 -2.0 0.0 0.0 ] name "R4" color "pink")

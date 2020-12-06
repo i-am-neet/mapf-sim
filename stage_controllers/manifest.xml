@@ -1,0 +1,16 @@
+<package>
+  <description brief="stage_controllers">
+
+     stage_controllers
+
+  </description>
+  <author>acer</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/stage_controllers</url>
+  <depend package="roscpp"/>
+  <depend package="std_msgs"/>
+
+</package>
+
+

@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/bionicwheel/stage_ws/src/stage_controllers/build/devel/setup.sh
