@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="ns" />
+  <arg name="robot" />
+
+  <group ns="$(arg ns)">
+    <!-- <node name="tf2_broadcaster" pkg="robot_stage" type="tf2_broadcaster" args="$(arg robot)" respawn="true" output="screen" /> -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_odom_broadcaster" args="-0.026 0.042 0.0 0.0 0.0 0.0 1 map '$(arg robot)/odom'" />
+  </group>
+</launch>
