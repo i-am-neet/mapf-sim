@@ -15,8 +15,8 @@ define hokuyolaser ranger
 (
   sensor(       
     range [ 0.0  10.0 ]
-    fov 270.0
-    samples 270
+    fov 360.0
+    samples 360
   )
   model
   (
