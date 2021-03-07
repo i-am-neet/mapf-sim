@@ -1,0 +1,3 @@
+[submodule "stage_ros"]
+	path = stage_ros
+	url = https://github.com/i-am-neet/stage_ros.git
