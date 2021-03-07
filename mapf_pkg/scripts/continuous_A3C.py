@@ -136,6 +136,6 @@ if __name__ == "__main__":
     plt.plot(res)
     plt.ylabel('Moving average ep reward')
     plt.xlabel('Step')
-    plt.savefig('../recording/result.png')
+    plt.savefig('./recording/result.png')
     plt.show()
 
