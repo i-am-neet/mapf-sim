@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
+TOTAL_ROBOT_NUM=4
+
 screen -X -S turtles_sim quit
-for i in {0..3};
+for i in $(seq 1 $TOTAL_ROBOT_NUM);
 do
   echo "Closeing robot_$i's tf transformer..."
   screen -X -S turtles${i}_tf quit

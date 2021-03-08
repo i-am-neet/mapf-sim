@@ -4,10 +4,21 @@ import rospy
 import message_filters
 from nav_msgs.msg import OccupancyGrid, Odometry
 
+import torch
+from my_a3c import Net, Worker
+
 robot_num = 4
 
+"""
+    callback value:
+        data[0]: local_costmap
+        data[1]: robot0's odom
+        data[2]: robot1's odom
+        ...
+"""
 def callback(*data):
-    rospy.loginfo(rospy.get_caller_id() + "I heard %s", data[1].pose)
+    # rospy.loginfo(rospy.get_caller_id() + "I heard %s", data[1].pose)
+    print(type(data[0].data))
 
 def listener(current_robot_num):
 

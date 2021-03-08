@@ -28,4 +28,5 @@ obstacle_layer:
     clearing: true,
     marking: true,
     topic: base_scan
+    # topic: ranger_0/laserscan
   }

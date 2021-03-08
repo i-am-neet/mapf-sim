@@ -9,11 +9,11 @@
               command="load" ns="local_costmap" />
     <rosparam file="$(find robot_stage)/params/global_costmap_params.yaml" command="load" />
     <rosparam file="$(find robot_stage)/params/local_costmap_params.yaml" command="load" />
-    <param name="global_costmap/global_frame" value="map"/>
-    <param name="global_costmap/robot_base_frame" value="$(arg robot)/base_link"/>
-    <param name="local_costmap/global_frame" value="$(arg robot)/odom"/>
-    <param name="local_costmap/robot_base_frame" value="$(arg robot)/base_link"/>
-
-    <remap from="scan" to="base_scan"/>
+    <param name="global_costmap/global_frame" value="map" />
+    <param name="global_costmap/robot_base_frame" value="stage/$(arg robot)/base_link" />
+    <param name="local_costmap/global_frame" value="stage/$(arg robot)/odom" />
+    <param name="local_costmap/robot_base_frame" value="stage/$(arg robot)/base_link" />
+  
+    <remap from="ranger_0/laserscan" to="base_scan" />
   </node>
 </launch>
