@@ -4,12 +4,14 @@ import sys
 from signal import signal, SIGINT
 from sys import exit
 import math
-import copy
 import numpy as np
 import rospy
 import message_filters
 from nav_msgs.msg import OccupancyGrid, Odometry
+from std_srvs.srv import Empty as EmptySrv
 import cv2
+import utils
+from matplotlib import pyplot as plt
 
 import torch
 # from my_a3c import Net, Worker
@@ -21,46 +23,6 @@ _map_resolution = 0.0
 ## Tmp
 goals = [(2, 2), (-1.5, 1.5), (-1.5, -1.5), (2, -2)]
 
-def _draw_robot(map, map_width, map_height, rx, ry, stick_on_bound=False):
-    _r = _robot_radius/_map_resolution
-    rx = rx + map_width/2
-    ry = map_height/2 - ry
-
-    x_start = int(rx-_r) if int(rx-_r)>=0 else 0
-    x_end = int(rx+_r) if int(rx+_r)<map_width else map_width
-    y_start = int(ry-_r) if int(ry-_r)>0 else 0
-    y_end = int(ry+_r) if int(ry+_r)<map_height else map_height
-
-    _map = copy.deepcopy(map)
-
-    for x in range(x_start, x_end):
-        for y in range(y_start, y_end):
-            _map[int(x+map_width*y)] = 255
-
-    return _map
-
-def _draw_goal(map, map_width, map_height, gx, gy):
-    return _draw_robot(map, map_width, map_height, gx, gy)
-
-def _draw_neighbors_goal(map, map_width, map_height, ngx, ngy, myx, myy):
-    _r = _robot_radius/_map_resolution
-    dx = ngx - myx
-    dy = ngy - myy
-    m = dy/dx if dx != 0 else math.inf
-    if abs(dx) <= map_width/2-_r and abs(dy) <= map_height/2-_r:     # in the FOV
-        return _draw_robot(map, map_width, map_height, dx, dy, True)
-    elif m == math.inf:                                              # goal on vertical
-        vy = np.sign(dy)*map_height/2
-        return _draw_robot(map, map_width, map_height, 0, vy, True)
-    elif abs(m) <= 1:                                                # slope(m) < 1
-        vx = np.sign(dx)*map_width/2                                 # draw on x-axis edge of fov
-        vy = m*vx                                                    # y=mx+b. bias(b) is 0, because (0, 0) is self
-        return _draw_robot(map, map_width, map_height, vx, vy, True)
-    elif abs(m) > 1:                                                 # slope(m) < 1
-        vy = np.sign(dy)*map_height/2                                # draw on y-axis edge of fov
-        vx = vy/m
-        return _draw_robot(map, map_width, map_height, vx, vy, True)
-
 class StageEnv:
 
     def __init__(self, current_robot_num,
@@ -71,7 +33,19 @@ class StageEnv:
         self.robots_num = robots_num
         self.map_resolution = map_resolution
 
+        self.action_space = None
+        self.observation_space = None
+
+        ## Initialize tensors
+        self.local_map = torch.zeros(1)
+        self.agents_map = torch.zeros(1)
+        self.my_goal_map = torch.zeros(1)
+        self.neighbors_goal_map = torch.zeros(1)
+
         rospy.init_node('mapf_env_node', anonymous=True)
+
+        rospy.wait_for_service('/reset_positions')
+        self._reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
 
         ## Register all topics for message_filters
         subscribers = []
@@ -97,43 +71,72 @@ class StageEnv:
     """
     def __callback(self, *data):
         ## local costmap: tuple -> np.array -> tensor
-        map_width = data[0].info.width
-        map_height = data[0].info.height
-        local_map = torch.from_numpy(np.asarray(data[0].data).reshape(map_height, map_width)[::-1].reshape(-1))
+        self.map_width = data[0].info.width
+        self.map_height = data[0].info.height
+        self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
         ## Current robot's info
         my_x = data[int(self.current_robot_num)].pose.pose.position.x / self.map_resolution
         my_y = data[int(self.current_robot_num)].pose.pose.position.y / self.map_resolution
 
         ## Initial size equal to local costmap
-        my_goal_map = torch.zeros(local_map.size())
-        agents_map = torch.zeros(local_map.size())
-        neighbors_goal_map = torch.zeros(local_map.size())
+        self.my_goal_map = torch.zeros(self.local_map.size())
+        self.agents_map = torch.zeros(self.local_map.size())
+        self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
         agx = goals[int(self.current_robot_num)-1][0] / self.map_resolution
         agy = goals[int(self.current_robot_num)-1][1] / self.map_resolution
 
-        my_goal_map = _draw_goal(my_goal_map, map_width, map_height, agx - my_x, agy - my_y)
+        self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, _robot_radius, _map_resolution)
 
         for i, e in enumerate(data):
             if i != 0: # data[0] is local costmap
                 _rx = e.pose.pose.position.x / self.map_resolution
                 _ry = e.pose.pose.position.y / self.map_resolution
-                if abs(_rx - my_x) <= map_width/2 and abs(_ry - my_y) <= map_height/2:
+                if abs(_rx - my_x) <= self.map_width/2 and abs(_ry - my_y) <= self.map_height/2:
 
-                    agents_map = _draw_robot(agents_map, map_width, map_height, _rx - my_x, _ry - my_y)
+                    self.agents_map = utils.draw_robot(self.agents_map, self.map_width, self.map_height, _rx - my_x, _ry - my_y, _robot_radius, _map_resolution)
 
                     ## Neighbors
                     if i != int(self.current_robot_num):
                         _ngx = goals[i-1][0] / self.map_resolution
                         _ngy = goals[i-1][1] / self.map_resolution
-                        neighbors_goal_map = _draw_neighbors_goal(neighbors_goal_map, map_width, map_height, _ngx, _ngy, my_x, my_y)
+                        self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, _robot_radius, _map_resolution)
 
-        cv2.imshow("local_map", local_map.reshape(map_height, map_width).cpu().numpy().astype('uint8'))
-        cv2.imshow("agents_map", agents_map.reshape(map_height, map_width).cpu().numpy().astype('uint8'))
-        cv2.imshow("my_goal_map", my_goal_map.reshape(map_height, map_width).cpu().numpy().astype('uint8'))
-        cv2.imshow("neighbors_goal_map", neighbors_goal_map.reshape(map_height, map_width).cpu().numpy().astype('uint8'))
+        # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
+        self.render()
+
+    def render(self):
+
+        _im_local_map = utils.tensor_to_cv(self.local_map, self.map_height, self.map_width)
+        _im_agents_map = utils.tensor_to_cv(self.agents_map, self.map_height, self.map_width)
+        _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.map_height, self.map_width)
+        _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.map_height, self.map_width)
+
+        _im_tile = utils.concat_tile_resize([[_im_local_map, _im_agents_map],
+                                             [_im_my_goal_map, _im_neighbors_goal_map]],
+                                             text=[["local_map", "agents_map"],
+                                                   ["my_goal_map", "neighbors_goal_map"]])
+        cv2.imshow("Observation", _im_tile)
         cv2.waitKey(1)
+
+    def reset(self):
+        self._reset_env()
+
+    def step(self, u):
+        pass
+
+    def _get_obs(self):
+        pass
+
+    def close(self):
+        pass
+
+    def _reward(self):
+        pass
+
+    def __del__(self):
+        cv2.destroyAllWindows()
 
 def exit_handler(signal_received, frame):
     # Handle any cleanup here

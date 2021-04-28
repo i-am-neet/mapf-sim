@@ -1,15 +1,15 @@
-define kinect ranger
-(
-  sensor
-  (
-    range_max 6.5
-    fov 58.0
-    samples 640
-  )
-  # generic model properties
-  color "black"
-  size [ 0.06 0.15 0.03 ]
-)
+# define kinect ranger
+# (
+#   sensor
+#   (
+#     range_max 6.5
+#     fov 58.0
+#     samples 640
+#   )
+#   # generic model properties
+#   color "black"
+#   size [ 0.06 0.15 0.03 ]
+# )
 
 define hokuyolaser ranger
 (
