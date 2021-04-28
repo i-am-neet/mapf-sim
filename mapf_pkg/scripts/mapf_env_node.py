@@ -8,6 +8,7 @@ from std_srvs.srv import Empty as EmptySrv
 import cv2
 import utils
 from matplotlib import pyplot as plt
+import time
 
 import torch
 
@@ -27,6 +28,8 @@ class StageEnv:
         self.robots_num = robots_num
         self.robot_radius = robot_radius
         self.map_resolution = map_resolution
+        self.map_height = 0
+        self.map_width = 0
 
         self.action_space = None
         self.observation_space = None
@@ -36,6 +39,7 @@ class StageEnv:
         self.agents_map = torch.zeros(1)
         self.my_goal_map = torch.zeros(1)
         self.neighbors_goal_map = torch.zeros(1)
+        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
 
         rospy.init_node('mapf_env_node', anonymous=True)
 
@@ -55,7 +59,7 @@ class StageEnv:
         ts = message_filters.TimeSynchronizer(subscribers, 10)
         ts.registerCallback(self.__callback)
 
-        rospy.spin()
+        # rospy.spin()
 
     """
         callback value:
@@ -99,6 +103,7 @@ class StageEnv:
                         self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
+        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
 
     def render(self):
 
@@ -116,12 +121,18 @@ class StageEnv:
 
     def reset(self):
         self._reset_env()
+        return self._get_obs()
 
     def step(self, u):
         pass
 
     def _get_obs(self):
-        pass
+        ## wait for message filter
+        if self.map_height == 0 or self.map_width == 0:
+            print("waiting...")
+            time.sleep(1)
+
+        return self.observation
 
     def close(self):
         pass

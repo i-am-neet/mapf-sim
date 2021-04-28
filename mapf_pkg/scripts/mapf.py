@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
 from mapf_env_node import StageEnv
-import argparse
 from signal import signal, SIGINT
+import argparse
+import torch
 
 arg_fmt = argparse.ArgumentDefaultsHelpFormatter
-parser = argparse.ArgumentParser(description='Stage RL Env Args',
-                                    formatter_class=arg_fmt)
+parser = argparse.ArgumentParser(description='Reinforcement Learning Arguments',
+                                 formatter_class=arg_fmt)
 parser.add_argument('--current-robot-num', type=int,
-                    help='The number of current robot.'
+                    help='The number of current robot. (For env)'
                     )
 parser.add_argument('--robots-num', type=int,
-                    help='The amount of all robots.'
+                    help='The amount of all robots. (For env)'
                     )
 parser.add_argument('--robot-diameter', default=0.25, type=float,
-                    help='The diameter of robot (default: 0.25, according to TB3)'
+                    help='The diameter of robot (default: 0.25, according to TB3) (For env)'
                     )
 parser.add_argument('--map-resolution', default=0.01, type=float,
-                    help='The resolution of map (default: 0.01)'
+                    help='The resolution of map (default: 0.01) (For env)'
                     )
 args = parser.parse_args()
 
 ## Tmp
 goals = [(2, 2), (-1.5, 1.5), (-1.5, -1.5), (2, -2)]
+
+## RL Args
+N_EPISODES = 200
+EPISODE_LENGTH = 200
 
 def exit_handler(signal_received, frame):
     # Handle any cleanup here
@@ -51,3 +56,14 @@ if __name__ == '__main__':
                    robot_radius=robot_radius,
                    goals=goals,
                    map_resolution=args.map_resolution)
+
+    for i_episode in range(N_EPISODES):
+        print("RESET")
+        o = env.reset()
+        r = 0
+
+        if i_episode%10==0: print("Start episode: {}".format(i_episode))
+        if i_episode%10==0: print("observation size is: {}, type is: {}".format(o.size(), type(o)))
+
+        for t in range(EPISODE_LENGTH):
+            env.render() ## It costs time
