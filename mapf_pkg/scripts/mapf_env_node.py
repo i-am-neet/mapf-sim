@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-import argparse
-import sys
-from signal import signal, SIGINT
-from sys import exit
 import math
 import numpy as np
 import rospy
@@ -14,23 +10,22 @@ import utils
 from matplotlib import pyplot as plt
 
 import torch
-# from my_a3c import Net, Worker
-
-_robot_diameter = 0.0 # according size of tb3: 0.3*0.3*0.4
-_robot_radius = _robot_diameter/2
-_map_resolution = 0.0
-
-## Tmp
-goals = [(2, 2), (-1.5, 1.5), (-1.5, -1.5), (2, -2)]
 
 class StageEnv:
 
     def __init__(self, current_robot_num,
                        robots_num,
-                       map_resolution=0.01):
+                       robot_radius,
+                       goals,
+                       map_resolution):
 
+        if len(goals) != robots_num:
+            raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
+
+        self.goals = goals
         self.current_robot_num = current_robot_num
         self.robots_num = robots_num
+        self.robot_radius = robot_radius
         self.map_resolution = map_resolution
 
         self.action_space = None
@@ -84,10 +79,10 @@ class StageEnv:
         self.agents_map = torch.zeros(self.local_map.size())
         self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
-        agx = goals[int(self.current_robot_num)-1][0] / self.map_resolution
-        agy = goals[int(self.current_robot_num)-1][1] / self.map_resolution
+        agx = self.goals[int(self.current_robot_num)-1][0] / self.map_resolution
+        agy = self.goals[int(self.current_robot_num)-1][1] / self.map_resolution
 
-        self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, _robot_radius, _map_resolution)
+        self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
 
         for i, e in enumerate(data):
             if i != 0: # data[0] is local costmap
@@ -95,16 +90,15 @@ class StageEnv:
                 _ry = e.pose.pose.position.y / self.map_resolution
                 if abs(_rx - my_x) <= self.map_width/2 and abs(_ry - my_y) <= self.map_height/2:
 
-                    self.agents_map = utils.draw_robot(self.agents_map, self.map_width, self.map_height, _rx - my_x, _ry - my_y, _robot_radius, _map_resolution)
+                    self.agents_map = utils.draw_robot(self.agents_map, self.map_width, self.map_height, _rx - my_x, _ry - my_y, self.robot_radius, self.map_resolution)
 
                     ## Neighbors
                     if i != int(self.current_robot_num):
-                        _ngx = goals[i-1][0] / self.map_resolution
-                        _ngy = goals[i-1][1] / self.map_resolution
-                        self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, _robot_radius, _map_resolution)
+                        _ngx = self.goals[i-1][0] / self.map_resolution
+                        _ngy = self.goals[i-1][1] / self.map_resolution
+                        self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
-        self.render()
 
     def render(self):
 
@@ -137,47 +131,3 @@ class StageEnv:
 
     def __del__(self):
         cv2.destroyAllWindows()
-
-def exit_handler(signal_received, frame):
-    # Handle any cleanup here
-    print('SIGINT or CTRL-C detected. Exiting gracefully')
-    cv2.destroyAllWindows()
-    exit(0)
-
-if __name__ == '__main__':
-
-    signal(SIGINT, exit_handler)
-
-    arg_fmt = argparse.ArgumentDefaultsHelpFormatter
-    parser = argparse.ArgumentParser(description='Stage RL Env Args',
-                                     formatter_class=arg_fmt)
-    parser.add_argument('--current-robot-num', type=int,
-                        help='The number of current robot.'
-                        )
-    parser.add_argument('--robots-num', type=int,
-                        help='The amount of all robots.'
-                        )
-    parser.add_argument('--robot-diameter', default=0.25, type=float,
-                        help='The diameter of robot (default: 0.25, according to TB3)'
-                        )
-    parser.add_argument('--map-resolution', default=0.01, type=float,
-                        help='The resolution of map (default: 0.01)'
-                        )
-    args = parser.parse_args()
-
-    if args.current_robot_num is None:
-        print("Please set argument '--current-robot-num'")
-        parser.print_help()
-        exit()
-    if args.robots_num is None:
-        print("Please set argument '--robot-num'")
-        parser.print_help()
-        exit()
-
-    _robot_diameter = args.robot_diameter
-    _robot_radius = args.robot_diameter/2
-    _map_resolution = args.map_resolution
-
-    StageEnv(current_robot_num=args.current_robot_num,
-             robots_num=args.robots_num,
-             map_resolution=args.map_resolution)
