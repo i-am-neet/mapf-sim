@@ -8,6 +8,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry
 from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Twist
 from stage_ros.msg import Stall
+from tf.transformations import euler_from_quaternion
 import cv2
 import utils
 from matplotlib import pyplot as plt
@@ -15,6 +16,9 @@ import time
 import re
 
 import torch
+
+ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY(meter)
+ARRIVED_RANGE_YAW = math.radians(5) # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW(degrees to radians)
 
 class StageEnv:
 
@@ -35,6 +39,12 @@ class StageEnv:
         self.map_resolution = map_resolution
         self.map_height = 0
         self.map_width = 0
+        self.current_robot_x = 0
+        self.current_robot_y = 0
+        self.current_robot_yaw = 0
+        self.current_goal_x = 0
+        self.current_goal_y = 0
+        self.current_goal_yaw = 0
 
         # Initialize tensors of Observations
         self.local_map = torch.zeros(1)
@@ -114,17 +124,30 @@ class StageEnv:
         self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
         # Current robot's info
-        my_x = data[int(self.current_robot_num)].pose.pose.position.x / self.map_resolution
-        my_y = data[int(self.current_robot_num)].pose.pose.position.y / self.map_resolution
+        self.current_robot_x = data[int(self.current_robot_num)].pose.pose.position.x
+        self.current_robot_y = data[int(self.current_robot_num)].pose.pose.position.y
+        
+        self.current_robot_yaw = euler_from_quaternion([data[int(self.current_robot_num)].pose.pose.orientation.x,
+                                                        data[int(self.current_robot_num)].pose.pose.orientation.y,
+                                                        data[int(self.current_robot_num)].pose.pose.orientation.z,
+                                                        data[int(self.current_robot_num)].pose.pose.orientation.w])[2]
+
+        my_x = self.current_robot_x / self.map_resolution
+        my_y = self.current_robot_y / self.map_resolution
+        my_yaw = self.current_robot_yaw
 
         # Initialize size equal to local costmap
         self.my_goal_map = torch.zeros(self.local_map.size())
         self.agents_map = torch.zeros(self.local_map.size())
         self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
-        agx = self.goals[int(self.current_robot_num)-1][0] / self.map_resolution    # Agent's goal x
-        agy = self.goals[int(self.current_robot_num)-1][1] / self.map_resolution    # Agent's goal y
-        agt = self.goals[int(self.current_robot_num)-1][2] / self.map_resolution    # Agent's goal theta
+        self.current_goal_x = self.goals[int(self.current_robot_num)-1][0]    # Agent's goal x
+        self.current_goal_y = self.goals[int(self.current_robot_num)-1][1]    # Agent's goal y
+        self.current_goal_yaw = self.goals[int(self.current_robot_num)-1][2]  # Agent's goal yaw
+
+        agx = self.current_goal_x / self.map_resolution
+        agy = self.current_goal_y / self.map_resolution
+        agyaw = self.current_goal_yaw
 
         self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
 
@@ -140,7 +163,7 @@ class StageEnv:
                     if i != int(self.current_robot_num):
                         _ngx = self.goals[i-1][0] / self.map_resolution     # Neighbor's goal x
                         _ngy = self.goals[i-1][1] / self.map_resolution     # Neighbor's goal y
-                        _ngt = self.goals[i-1][2] / self.map_resolution     # Neighbor's goal theta
+                        _ngyaw = self.goals[i-1][2]                         # Neighbor's goal yaw
                         self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
@@ -202,10 +225,20 @@ class StageEnv:
         # Reward function
         r = 0
 
-        if self._terminal:
-            # The robot which is in collision will get punishment
-            if self.current_robot_num in self._stalled_robots:
-                r = -100
+        # ARRIVED GOAL
+        if math.dist([self.current_robot_x, self.current_robot_y],
+                     [self.current_goal_x, self.current_goal_y]) <= ARRIVED_RANGE_XY and \
+           abs(self.current_robot_yaw - self.current_goal_yaw) <= ARRIVED_RANGE_YAW:
+
+           print("Arrived!!!")
+           r = 100
+        else:
+            print("Ddist: {}, Dyaw: {}".format(math.dist([self.current_robot_x, self.current_robot_y], [self.current_goal_x, self.current_goal_y]),
+                                               abs(self.current_robot_yaw - self.current_goal_yaw)))
+
+        # The robot which is in collision will get punishment
+        if self.current_robot_num in self._stalled_robots:
+            r = -100
             return self.observation, r, True, {"Somebody screw up: {}".format(self._stalled_robots)}
 
         while not self._sync_ready:
