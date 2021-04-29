@@ -3,6 +3,7 @@ from mapf_env_node import StageEnv
 from signal import signal, SIGINT
 import argparse
 import torch
+import random
 
 arg_fmt = argparse.ArgumentDefaultsHelpFormatter
 parser = argparse.ArgumentParser(description='Reinforcement Learning Arguments',
@@ -57,6 +58,8 @@ if __name__ == '__main__':
                    goals=goals,
                    map_resolution=args.map_resolution)
 
+    print(env.observation_space)
+
     for i_episode in range(N_EPISODES):
         print("RESET")
         o = env.reset()
@@ -67,3 +70,11 @@ if __name__ == '__main__':
 
         for t in range(EPISODE_LENGTH):
             env.render() ## It costs time
+
+            # a = (random.uniform(-10, 10), random.uniform(-10, 10), random.uniform(-10, 10))
+            a = (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
+            o, r, done, info = env.step(a)
+            # print("Agent take {} and get {} {} {}".format(a, r, done, info))
+            if done:
+                print(info)
+                print("Reward: {}".format(r))
