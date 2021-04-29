@@ -103,6 +103,10 @@ class StageEnv:
             data[1]: robot1's odom
             data[2]: robot2's odom
             ...
+
+        Observations are created by this function
+        (local_map, agents_map, my_goal_map, neighbors_goal_map)
+
         """
         # local costmap: tuple -> np.array -> tensor
         self.map_width = data[0].info.width
@@ -118,8 +122,9 @@ class StageEnv:
         self.agents_map = torch.zeros(self.local_map.size())
         self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
-        agx = self.goals[int(self.current_robot_num)-1][0] / self.map_resolution
-        agy = self.goals[int(self.current_robot_num)-1][1] / self.map_resolution
+        agx = self.goals[int(self.current_robot_num)-1][0] / self.map_resolution    # Agent's goal x
+        agy = self.goals[int(self.current_robot_num)-1][1] / self.map_resolution    # Agent's goal y
+        agt = self.goals[int(self.current_robot_num)-1][2] / self.map_resolution    # Agent's goal theta
 
         self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
 
@@ -133,8 +138,9 @@ class StageEnv:
 
                     # Neighbors
                     if i != int(self.current_robot_num):
-                        _ngx = self.goals[i-1][0] / self.map_resolution
-                        _ngy = self.goals[i-1][1] / self.map_resolution
+                        _ngx = self.goals[i-1][0] / self.map_resolution     # Neighbor's goal x
+                        _ngy = self.goals[i-1][1] / self.map_resolution     # Neighbor's goal y
+                        _ngt = self.goals[i-1][2] / self.map_resolution     # Neighbor's goal theta
                         self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
