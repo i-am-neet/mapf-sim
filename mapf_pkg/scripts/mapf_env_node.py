@@ -101,8 +101,7 @@ class StageEnv:
             for n in MAPF_NODES:
                 if rosnode.rosnode_ping(n, max_count=3):
                     MAPF_ALIVE_NODES.append(n)
-            time.sleep(1)
-
+        time.sleep(1)
 
         # rospy.spin()
 
@@ -197,7 +196,7 @@ class StageEnv:
                                              [_im_my_goal_map, _im_neighbors_goal_map]],
                                              text=[["local_map", "agents_map"],
                                                    ["my_goal_map", "neighbors_goal_map"]])
-        cv2.imshow("Observation", _im_tile)
+        cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
         cv2.waitKey(1)
 
     def reset(self):

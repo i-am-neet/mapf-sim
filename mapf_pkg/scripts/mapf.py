@@ -34,49 +34,46 @@ def exit_handler(signal_received, frame):
     print('SIGINT or CTRL-C detected. Exiting gracefully')
     exit(0)
 
-if __name__ == '__main__':
+signal(SIGINT, exit_handler)
 
-    signal(SIGINT, exit_handler)
+if args.current_robot_num is None:
+    print("Please set argument '--current-robot-num'")
+    parser.print_help()
+    exit()
+if args.robots_num is None:
+    print("Please set argument '--robot-num'")
+    parser.print_help()
+    exit()
 
+robot_diameter = args.robot_diameter
+robot_radius = args.robot_diameter/2
+map_resolution = args.map_resolution
 
-    if args.current_robot_num is None:
-        print("Please set argument '--current-robot-num'")
-        parser.print_help()
-        exit()
-    if args.robots_num is None:
-        print("Please set argument '--robot-num'")
-        parser.print_help()
-        exit()
+env = StageEnv(current_robot_num=args.current_robot_num,
+                robots_num=args.robots_num,
+                robot_radius=robot_radius,
+                goals=goals,
+                map_resolution=args.map_resolution)
 
-    robot_diameter = args.robot_diameter
-    robot_radius = args.robot_diameter/2
-    map_resolution = args.map_resolution
+print(env.observation_space)
 
-    env = StageEnv(current_robot_num=args.current_robot_num,
-                   robots_num=args.robots_num,
-                   robot_radius=robot_radius,
-                   goals=goals,
-                   map_resolution=args.map_resolution)
+for i_episode in range(N_EPISODES):
 
-    print(env.observation_space)
+    o = env.reset()
+    ep_reward = 0
 
-    for i_episode in range(N_EPISODES):
-        print("RESET")
-        o = env.reset()
-        r = 0
+    if i_episode%10==0: print("Start episode: {}".format(i_episode))
+    if i_episode%10==0: print("observation size is: {}, type is: {}".format(o.size(), type(o)))
 
-        if i_episode%10==0: print("Start episode: {}".format(i_episode))
-        if i_episode%10==0: print("observation size is: {}, type is: {}".format(o.size(), type(o)))
+    for t in range(EPISODE_LENGTH):
+        env.render() ## It costs time
 
-        for t in range(EPISODE_LENGTH):
-            env.render() ## It costs time
+        # a = (random.uniform(-10, 10), random.uniform(-10, 10), random.uniform(-10, 10))
+        a = (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
+        o, r, done, info = env.step(a)
+        # print("Agent take {} and get {} {} {}".format(a, r, done, info))
+        if done:
+            print(info)
+            print("Reward: {}".format(r))
 
-            # a = (random.uniform(-10, 10), random.uniform(-10, 10), random.uniform(-10, 10))
-            a = (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
-            o, r, done, info = env.step(a)
-            # print("Agent take {} and get {} {} {}".format(a, r, done, info))
-            if done:
-                print(info)
-                print("Reward: {}".format(r))
-
-    env.close()
+env.close()
