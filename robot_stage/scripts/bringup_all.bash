@@ -2,9 +2,9 @@
 
 TOTAL_ROBOT_NUM=4
 
-echo "LAUNCHING turtles..."
-screen -dmS turtles_sim roslaunch robot_stage turtles.launch
-sleep 3
+#echo "LAUNCHING turtles..."
+#screen -dmS turtles_sim roslaunch robot_stage turtles.launch
+#sleep 3
 for i in $(seq 1 $TOTAL_ROBOT_NUM);
 do
   echo "LAUNCHING robot_$i's tf transformer..."
