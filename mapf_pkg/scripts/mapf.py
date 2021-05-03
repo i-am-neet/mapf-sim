@@ -4,6 +4,7 @@ from signal import signal, SIGINT
 import argparse
 import torch
 import random
+from gym import spaces
 
 arg_fmt = argparse.ArgumentDefaultsHelpFormatter
 parser = argparse.ArgumentParser(description='Reinforcement Learning Arguments',
@@ -15,10 +16,10 @@ parser.add_argument('--robots-num', type=int,
                     help='The amount of all robots. (For env)'
                     )
 parser.add_argument('--robot-diameter', default=0.25, type=float,
-                    help='The diameter of robot (default: 0.25, according to TB3) (For env)'
+                    help='The diameter of robot (default is according to TB3) (For env)'
                     )
 parser.add_argument('--map-resolution', default=0.01, type=float,
-                    help='The resolution of map (default: 0.01) (For env)'
+                    help='The resolution of map (For env)'
                     )
 args = parser.parse_args()
 
@@ -26,8 +27,8 @@ args = parser.parse_args()
 goals = [(2, 2, 0), (-1.5, 1.5, 0), (-1.5, -1.5, 0), (2, -2, 0)]
 
 ## RL Args
-N_EPISODES = 200
-EPISODE_LENGTH = 200
+MAX_EPISODES = 200
+MAX_EP_STEPS = 200
 
 def exit_handler(signal_received, frame):
     # Handle any cleanup here
@@ -57,23 +58,28 @@ env = StageEnv(current_robot_num=args.current_robot_num,
 
 print(env.observation_space)
 
-for i_episode in range(N_EPISODES):
+for i_episode in range(MAX_EPISODES):
 
+    done = False
+    t = 0
     o = env.reset()
     ep_reward = 0
 
     if i_episode%10==0: print("Start episode: {}".format(i_episode))
     if i_episode%10==0: print("observation size is: {}, type is: {}".format(o.size(), type(o)))
 
-    for t in range(EPISODE_LENGTH):
+    while not done:
         env.render() ## It costs time
 
-        # a = (random.uniform(-10, 10), random.uniform(-10, 10), random.uniform(-10, 10))
         a = (random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))
+
         o, r, done, info = env.step(a)
         # print("Agent take {} and get {} {} {}".format(a, r, done, info))
-        if done:
+
+        if info is not None:
             print(info)
-            print("Reward: {}".format(r))
+
+        if done or t >= MAX_EP_STEPS:
+            break
 
 env.close()
