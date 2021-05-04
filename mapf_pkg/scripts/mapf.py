@@ -66,7 +66,6 @@ for i_episode in range(MAX_EPISODES):
     done = False
     t = 0
     o = env.reset()
-    step_count = 0
 
     if i_episode%10==0: print("Start episode: {}".format(i_episode))
     if i_episode%10==0: print("observation size is: {}, type is: {}".format(o.size(), type(o)))
@@ -81,9 +80,7 @@ for i_episode in range(MAX_EPISODES):
 
         total_reward += r
 
-        print("EP {}, Step {}: \
-                   reward | {} \
-                   total_reward | {}".format(i_episode, t, r, total_reward))
+        print("EP {}, Step {}: reward | {} total_reward | {}".format(i_episode, t, r, total_reward))
 
         if info:
             print(info)

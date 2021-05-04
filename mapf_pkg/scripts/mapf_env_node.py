@@ -222,8 +222,11 @@ class StageEnv(gym.Env):
 
         if self.current_robot_num == 1:
             print("I am robot 1, I reset Env.")
-            reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
-            reset_env()
+            try:
+                reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+                reset_env()
+            except rospy.ServiceException, e:
+                print("Service call failed: {}".format(e))
             # self._reset_env() # call ROS service
         time.sleep(1)
 
