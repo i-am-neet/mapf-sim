@@ -18,7 +18,25 @@ $ source $HOME/mapf/bin/active
 ## Install requirement package
 Simulator:
 ```bash
-$ sudo apt install ros-noetic-stage python3-catkin-pkg
+$ sudo apt install python3-catkin-pkg
+```
+
+Build Stage from source
+```bash
+$ cd $HOME
+$ mkdir stage4
+$ cd stage4
+$ git clone git://github.com/rtv/Stage.git
+# or https://github.com/CodeFinder2/Stage.git
+$ export STG=$HOME/stg
+$ cmake -DCMAKE_INSTALL_PREFIX=$STG Stage
+$ make
+$ make install
+$ export LD_LIBRARY_PATH=$STG/lib
+# Stage LD
+echo "export STG=$HOME/stg" >> ~/.bashrc
+echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$STG/lib" >> ~/.bashrc
+echo "export PATH=$PATH:$STG/bin" >> ~/.bashrc
 ```
 
 Pytorch:
