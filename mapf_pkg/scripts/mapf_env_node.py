@@ -66,8 +66,6 @@ class StageEnv(gym.Env):
         self.neighbors_goal_map = torch.zeros(1)
         self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
 
-        # self.observation_space = self.observation.size()
-        # self.action_space = len((0, 0, 0)) # vx, vy, w
         self.observation_space = spaces.Box(low=0, high=255, shape=(self.map_height, self.map_width, 4), dtype=np.uint8)
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
@@ -77,13 +75,9 @@ class StageEnv(gym.Env):
         rospy.init_node('mapf_env_node', anonymous=True)
 
         # Publisher
-        self._pub_vel = rospy.Publisher('/robot_{}/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
-        self._pub_pose = rospy.Publisher('/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
-        self._pub_done = rospy.Publisher('/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
-
-        # Services
-        # rospy.wait_for_service('/reset_positions')
-        # self._reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+        self._pub_vel = rospy.Publisher('/stage/robot_{}/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
+        self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
+        self._pub_done = rospy.Publisher('/stage/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
         # Register all topics for message_filters
         _subscribers = []
@@ -91,8 +85,8 @@ class StageEnv(gym.Env):
         print("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
         _subscribers.append(_sub_obs)
         for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot_{}/odom".format(str(i)), Odometry)
-            print("/robot_{}/odom".format(str(i)))
+            _sub_obs = message_filters.Subscriber("/stage/robot_{}/odom".format(str(i)), Odometry)
+            print("/stage/robot_{}/odom".format(str(i)))
             _subscribers.append(_sub_obs)
 
         ts = message_filters.TimeSynchronizer(_subscribers, 10)
@@ -105,8 +99,8 @@ class StageEnv(gym.Env):
 
         _subscribers_done = []
         for i in range(0, self.robots_num):
-            _sub_done = message_filters.Subscriber("/robot_{}/done".format(str(i)), Bool)
-            print("/robot_{}/done".format(str(i)))
+            _sub_done = message_filters.Subscriber("/stage/robot_{}/done".format(str(i)), Bool)
+            print("/stage/robot_{}/done".format(str(i)))
             _subscribers_done.append(_sub_done)
 
         ts_done = message_filters.ApproximateTimeSynchronizer(_subscribers_done, 10, 0.1, allow_headerless=True)
@@ -277,37 +271,17 @@ class StageEnv(gym.Env):
 
     def reset(self):
         """
+        When all robots are done!
         Reset robots' position, robots' done.
+
         Output: observation
         """
-
-        # Stop robot
-        self.__action_to_vel([0, 0, 0])
-        time.sleep(3)
 
         self._current_robot_done = False
         self._done_robots = tuple()
         self._sync_obs_ready = False
 
-        init_pose = Pose()
-        init_pose.position.x = self._current_robot_init_x
-        init_pose.position.y = self._current_robot_init_y
-        init_pose.position.z = 0
-        init_pose.orientation.x = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[0]
-        init_pose.orientation.y = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[1]
-        init_pose.orientation.z = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[2]
-        init_pose.orientation.w = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[3]
-
-        self._pub_pose.publish(init_pose)
-
-        # if self.current_robot_num == 1:
-        #     print("I am robot 1, I reset Env.")
-        #     try:
-        #         reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
-        #         reset_env()
-        #     except rospy.ServiceException, e:
-        #         print("Service call failed: {}".format(e))
-        #     # self._reset_env() # call ROS service
+        self.__reset_all_robots()
 
         return self.observation
 
@@ -320,8 +294,7 @@ class StageEnv(gym.Env):
         done = False
         info = {}
         self._sync_obs_ready = False
-
-        self._pub_done.publish(self._current_robot_done)
+        self._current_robot_done = False
 
         self.__action_to_vel(u)
 
@@ -331,7 +304,7 @@ class StageEnv(gym.Env):
         # ARRIVED GOAL
         for i, e in enumerate(self.robots_position):
             if utils.dist([e[0], e[1]], [self.goals[i][0], self.goals[i][1]]) <= ARRIVED_RANGE_XY and \
-               abs(e[2] - self.goals[i][2] <= ARRIVED_RANGE_YAW):
+               abs(e[2] - self.goals[i][2]) <= ARRIVED_RANGE_YAW:
 
                 if i == self.current_robot_num:
                     self._current_robot_done = True
@@ -339,8 +312,11 @@ class StageEnv(gym.Env):
 
         # The robot which is in collision will get punishment
         if self.current_robot_num in self._stalled_robots:
+            self._current_robot_done = True
             r = -100
             info = {"Somebody screw up: {}".format(self._stalled_robots)}
+
+        self._pub_done.publish(self._current_robot_done)
 
         while not self._sync_obs_ready:
             pass
@@ -351,8 +327,8 @@ class StageEnv(gym.Env):
         return self.observation, r, done, info
 
     def __action_to_vel(self, action):
-        # if len(action) != self.action_space:
-        #     raise ValueError("action size ERROR.")
+        if action.shape != self.action_space.shape:
+            raise ValueError("action size ERROR.")
 
         msg = Twist()
         msg.linear.x = action[0]
@@ -362,6 +338,58 @@ class StageEnv(gym.Env):
         msg.angular.y = 0
         msg.angular.z = action[2]
         self._pub_vel.publish(msg)
+
+    def __reset_current_robot(self):
+        """
+        Reset current robot's position to _current_robot_init_(x, y, yaw)
+        """
+
+        # Need to stop robot for a while before resetting pose!!!!!
+        self.__action_to_vel([0, 0, 0])
+        time.sleep(3)
+
+        init_pose = Pose()
+        init_pose.position.x = self._current_robot_init_x
+        init_pose.position.y = self._current_robot_init_y
+        init_pose.position.z = 0
+        init_pose.orientation.x = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[0]
+        init_pose.orientation.y = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[1]
+        init_pose.orientation.z = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[2]
+        init_pose.orientation.w = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[3]
+
+        self._pub_pose.publish(init_pose)
+
+    def __stop_all_robots(self):
+        """
+        Publish cmd_vel: (0, 0, 0) to all robots
+        """
+        msg = Twist()
+        msg.linear.x = 0
+        msg.linear.y = 0
+        msg.linear.z = 0
+        msg.angular.x = 0
+        msg.angular.y = 0
+        msg.angular.z = 0
+
+        for i in range(0, self.robots_num):
+            _pub = rospy.Publisher('/stage/robot_{}/cmd_vel'.format(i), Twist, queue_size=1)
+            _pub.publish(msg)
+
+    def __reset_all_robots(self):
+        """
+        Reset all robots' position by robot 0
+        """
+
+        self.__stop_all_robots()
+        time.sleep(3)
+
+        if self.current_robot_num == 0:
+            print("I am robot 0, I reset Env.")
+            try:
+                reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+                reset_env()
+            except rospy.ServiceException as e:
+                print("Service call failed: {}".format(e))
 
     def close(self):
         pass

@@ -29,8 +29,8 @@ args = parser.parse_args()
 goals = [(2.1, 2.1, 0.0), (-1.8, 1.8, 3.14), (1.5, -1.5, 3.14), (-2.1, -2.1, 0.0)]
 
 ## RL Args
-MAX_EPISODES = 200
-MAX_EP_STEPS = 200
+MAX_EPISODES = 1000
+MAX_EP_STEPS = 500
 
 def exit_handler(signal_received, frame):
     # Handle any cleanup here
@@ -75,7 +75,10 @@ for i_episode in range(MAX_EPISODES):
         # env.render() ## It costs time
 
         # a = env.action_space.sample()
-        a = np.clip([env._current_goal_x - env._current_robot_x, env._current_goal_y - env._current_robot_y, env._current_goal_yaw - env._current_robot_yaw], -0.1, 0.1)
+        dx = env._current_goal_x - env._current_robot_x
+        dy = env._current_goal_y - env._current_robot_y
+        dyaw = env._current_goal_yaw - env._current_robot_yaw
+        a = np.array([dx, dy, dyaw]).clip(-0.1, 0.1)
         o, r, done, info = env.step(a)
         # print("Agent take {} and get {} {} {}".format(a, r, done, info))
 
