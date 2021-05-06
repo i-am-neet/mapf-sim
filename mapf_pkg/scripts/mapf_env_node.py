@@ -7,8 +7,10 @@ import message_filters
 from nav_msgs.msg import OccupancyGrid, Odometry
 from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Pose
+from std_msgs.msg import Bool
 from stage_ros.msg import Stall
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import cv2
 import utils
 from matplotlib import pyplot as plt
@@ -44,12 +46,17 @@ class StageEnv(gym.Env):
         self.map_resolution = map_resolution
         self.map_height = 0
         self.map_width = 0
-        self.current_robot_x = 0
-        self.current_robot_y = 0
-        self.current_robot_yaw = 0
-        self.current_goal_x = 0
-        self.current_goal_y = 0
-        self.current_goal_yaw = 0
+        self._current_robot_x = 0
+        self._current_robot_y = 0
+        self._current_robot_yaw = 0
+        self._current_robot_init_x = 0
+        self._current_robot_init_y = 0
+        self._current_robot_init_yaw = 0
+        self._current_robot_done = False
+        self._first_time = True
+        self._current_goal_x = 0
+        self._current_goal_y = 0
+        self._current_goal_yaw = 0
         self.robots_position = list()
 
         # Initialize tensors of Observations
@@ -65,21 +72,27 @@ class StageEnv(gym.Env):
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
         self._stalled_robots = tuple()
+        self._done_robots = tuple()
 
         rospy.init_node('mapf_env_node', anonymous=True)
 
-        rospy.wait_for_service('/reset_positions')
+        # Publisher
+        self._pub_vel = rospy.Publisher('/robot_{}/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
+        self._pub_pose = rospy.Publisher('/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
+        self._pub_done = rospy.Publisher('/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
+
+        # Services
+        # rospy.wait_for_service('/reset_positions')
         # self._reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
 
         # Register all topics for message_filters
         _subscribers = []
-        _arrived_subs = []
-        _sub_obs = message_filters.Subscriber("/R{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
-        print("/R"+str(self.current_robot_num)+"_move_base/local_costmap/costmap")
+        _sub_obs = message_filters.Subscriber("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
+        print("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
         _subscribers.append(_sub_obs)
-        for i in range(1, self.robots_num+1):
-            _sub_obs = message_filters.Subscriber("/stage/R{}/odometry".format(str(i)), Odometry)
-            print("/stage/R{}/odometry".format(str(i)))
+        for i in range(0, self.robots_num):
+            _sub_obs = message_filters.Subscriber("/robot_{}/odom".format(str(i)), Odometry)
+            print("/robot_{}/odom".format(str(i)))
             _subscribers.append(_sub_obs)
 
         ts = message_filters.TimeSynchronizer(_subscribers, 10)
@@ -90,8 +103,14 @@ class StageEnv(gym.Env):
         # Flags
         self._sync_obs_ready = False
 
-        # Publisher
-        self._pub_vel = rospy.Publisher('/stage/R{}/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
+        _subscribers_done = []
+        for i in range(0, self.robots_num):
+            _sub_done = message_filters.Subscriber("/robot_{}/done".format(str(i)), Bool)
+            print("/robot_{}/done".format(str(i)))
+            _subscribers_done.append(_sub_done)
+
+        ts_done = message_filters.ApproximateTimeSynchronizer(_subscribers_done, 10, 0.1, allow_headerless=True)
+        ts_done.registerCallback(self.__callback_done)
 
         while self.map_height == 0:
             print("waiting ROS message_filters...")
@@ -130,55 +149,69 @@ class StageEnv(gym.Env):
         self.map_height = data[0].info.height
         self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
+        data = data[1:] # Remove local_costmap, for counting robot's number easily
+
         # Current robot's info
-        self.current_robot_x = data[int(self.current_robot_num)].pose.pose.position.x
-        self.current_robot_y = data[int(self.current_robot_num)].pose.pose.position.y
-        
-        self.current_robot_yaw = euler_from_quaternion([data[int(self.current_robot_num)].pose.pose.orientation.x,
+        self._current_robot_x = data[int(self.current_robot_num)].pose.pose.position.x
+        self._current_robot_y = data[int(self.current_robot_num)].pose.pose.position.y
+        self._current_robot_yaw = euler_from_quaternion([data[int(self.current_robot_num)].pose.pose.orientation.x,
                                                         data[int(self.current_robot_num)].pose.pose.orientation.y,
                                                         data[int(self.current_robot_num)].pose.pose.orientation.z,
                                                         data[int(self.current_robot_num)].pose.pose.orientation.w])[2]
 
-        my_x = self.current_robot_x / self.map_resolution
-        my_y = self.current_robot_y / self.map_resolution
-        my_yaw = self.current_robot_yaw
+        if self._first_time:
+            # Save initial position
+            self._current_robot_init_x = self._current_robot_x
+            self._current_robot_init_y =  self._current_robot_y
+            self._current_robot_init_yaw =  self._current_robot_yaw
+            self._current_goal_x = self.goals[int(self.current_robot_num)][0]    # Agent's goal x
+            self._current_goal_y = self.goals[int(self.current_robot_num)][1]    # Agent's goal y
+            self._current_goal_yaw = self.goals[int(self.current_robot_num)][2]  # Agent's goal yaw
+
+            print("I am robot {}, from ({}, {}, {}) to ({}, {}, {})"\
+                   .format(self.current_robot_num,\
+                           self._current_robot_init_x, self._current_robot_init_y, self._current_robot_init_yaw,\
+                           self._current_goal_x, self._current_goal_y, self._current_goal_yaw))
+            self._first_time = False
+
+        # Scale unit for pixel with map's resolution (meter -> pixels)
+        my_x = self._current_robot_x / self.map_resolution
+        my_y = self._current_robot_y / self.map_resolution
+        my_yaw = self._current_robot_yaw
+
+        agx = self._current_goal_x / self.map_resolution
+        agy = self._current_goal_y / self.map_resolution
+        agyaw = self._current_goal_yaw
 
         # Initialize size equal to local costmap
         self.my_goal_map = torch.zeros(self.local_map.size())
         self.agents_map = torch.zeros(self.local_map.size())
         self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
-        self.current_goal_x = self.goals[int(self.current_robot_num)-1][0]    # Agent's goal x
-        self.current_goal_y = self.goals[int(self.current_robot_num)-1][1]    # Agent's goal y
-        self.current_goal_yaw = self.goals[int(self.current_robot_num)-1][2]  # Agent's goal yaw
-
-        agx = self.current_goal_x / self.map_resolution
-        agy = self.current_goal_y / self.map_resolution
-        agyaw = self.current_goal_yaw
-
         self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
 
         self.robots_position = list()
+
         for i, e in enumerate(data):
-            if i != 0: # data[0] is local costmap
-                self.robots_position.append([e.pose.pose.position.x,
-                                             e.pose.pose.position.y,
-                                             euler_from_quaternion([e.pose.pose.orientation.x,
-                                                                    e.pose.pose.orientation.y,
-                                                                    e.pose.pose.orientation.z,
-                                                                    e.pose.pose.orientation.w])[2]])
-                _rx = e.pose.pose.position.x / self.map_resolution
-                _ry = e.pose.pose.position.y / self.map_resolution
-                if abs(_rx - my_x) <= self.map_width/2 and abs(_ry - my_y) <= self.map_height/2:
+            self.robots_position.append([e.pose.pose.position.x,
+                                         e.pose.pose.position.y,
+                                         euler_from_quaternion([e.pose.pose.orientation.x,
+                                                                e.pose.pose.orientation.y,
+                                                                e.pose.pose.orientation.z,
+                                                                e.pose.pose.orientation.w])[2]])
+            _rx = e.pose.pose.position.x / self.map_resolution
+            _ry = e.pose.pose.position.y / self.map_resolution
 
-                    self.agents_map = utils.draw_robot(self.agents_map, self.map_width, self.map_height, _rx - my_x, _ry - my_y, self.robot_radius, self.map_resolution)
+            if abs(_rx - my_x) <= self.map_width/2 and abs(_ry - my_y) <= self.map_height/2:
 
-                    # Neighbors
-                    if i != int(self.current_robot_num):
-                        _ngx = self.goals[i-1][0] / self.map_resolution     # Neighbor's goal x
-                        _ngy = self.goals[i-1][1] / self.map_resolution     # Neighbor's goal y
-                        _ngyaw = self.goals[i-1][2]                         # Neighbor's goal yaw
-                        self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
+                self.agents_map = utils.draw_robot(self.agents_map, self.map_width, self.map_height, _rx - my_x, _ry - my_y, self.robot_radius, self.map_resolution)
+
+                # Neighbors
+                if i != int(self.current_robot_num):
+                    _ngx = self.goals[i][0] / self.map_resolution     # Neighbor's goal x
+                    _ngy = self.goals[i][1] / self.map_resolution     # Neighbor's goal y
+                    _ngyaw = self.goals[i][2]                         # Neighbor's goal yaw
+                    self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
         self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
@@ -187,13 +220,43 @@ class StageEnv(gym.Env):
 
         self._sync_obs_ready = True
 
+    def __callback_done(self, *data):
+        """
+        callback value:
+            data[0]: whether robot0 arrived it's goal
+            data[1]: whether robot1 arrived it's goal
+            data[2]: whether robot2 arrived it's goal
+            ...
+        """
+
+        self._done_robots = tuple(e.data for i, e in enumerate(data))
+
+    @property
+    def done_robots(self):
+        return self._done_robots
+
+    @property
+    def all_robots_done(self):
+        if len(self.done_robots) == 0:
+            return False
+        else:
+            return all(self._done_robots)
+
+    @property
+    def i_am_done(self):
+        return self._current_robot_done
+
+    @i_am_done.setter
+    def i_am_done(self, done):
+        self._current_robot_done = done
+
     def __stalled_callback(self, data):
         """
         Get stalled robots' info from stage.
         NOTICE: robot's number is count from 0 in stage, so need to +1
         """
 
-        self._stalled_robots = tuple(i+1 for i in data.stalled_robot_num)
+        self._stalled_robots = tuple(i for i in data.stalled_robots_num)
 
     def render(self):
         """
@@ -214,21 +277,37 @@ class StageEnv(gym.Env):
 
     def reset(self):
         """
-        Reset robots' position.
+        Reset robots' position, robots' done.
         Output: observation
         """
 
+        # Stop robot
+        self.__action_to_vel([0, 0, 0])
+        time.sleep(3)
+
+        self._current_robot_done = False
+        self._done_robots = tuple()
         self._sync_obs_ready = False
 
-        if self.current_robot_num == 1:
-            print("I am robot 1, I reset Env.")
-            try:
-                reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
-                reset_env()
-            except rospy.ServiceException, e:
-                print("Service call failed: {}".format(e))
-            # self._reset_env() # call ROS service
-        time.sleep(1)
+        init_pose = Pose()
+        init_pose.position.x = self._current_robot_init_x
+        init_pose.position.y = self._current_robot_init_y
+        init_pose.position.z = 0
+        init_pose.orientation.x = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[0]
+        init_pose.orientation.y = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[1]
+        init_pose.orientation.z = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[2]
+        init_pose.orientation.w = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[3]
+
+        self._pub_pose.publish(init_pose)
+
+        # if self.current_robot_num == 1:
+        #     print("I am robot 1, I reset Env.")
+        #     try:
+        #         reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+        #         reset_env()
+        #     except rospy.ServiceException, e:
+        #         print("Service call failed: {}".format(e))
+        #     # self._reset_env() # call ROS service
 
         return self.observation
 
@@ -240,8 +319,9 @@ class StageEnv(gym.Env):
 
         done = False
         info = {}
-        robots_arrived = list()
         self._sync_obs_ready = False
+
+        self._pub_done.publish(self._current_robot_done)
 
         self.__action_to_vel(u)
 
@@ -253,27 +333,9 @@ class StageEnv(gym.Env):
             if utils.dist([e[0], e[1]], [self.goals[i][0], self.goals[i][1]]) <= ARRIVED_RANGE_XY and \
                abs(e[2] - self.goals[i][2] <= ARRIVED_RANGE_YAW):
 
-                robots_arrived.append(True)
-                if i == self.current_robot_num-1:
+                if i == self.current_robot_num:
+                    self._current_robot_done = True
                     r = 100
-            else:
-                robots_arrived.append(False)
-
-        # if utils.dist([self.current_robot_x, self.current_robot_y],
-        #               [self.current_goal_x, self.current_goal_y]) <= ARRIVED_RANGE_XY and \
-        #               abs(self.current_robot_yaw - self.current_goal_yaw) <= ARRIVED_RANGE_YAW:
-
-        #     r = 100
-        # else:
-        # #     print("Ddist: {}, Dyaw: {}".format(utils.dist([self.current_robot_x, self.current_robot_y], [self.current_goal_x, self.current_goal_y]),
-        # #                                        abs(self.current_robot_yaw - self.current_goal_yaw)))
-        #     pass
-        #     # arrived_msg.data = False
-        #     # self._pub_arrived.publish(arrived_msg)
-
-        if all(robots_arrived):
-            done = True
-            info = {"All robots are arrived goal."}
 
         # The robot which is in collision will get punishment
         if self.current_robot_num in self._stalled_robots:
@@ -282,6 +344,9 @@ class StageEnv(gym.Env):
 
         while not self._sync_obs_ready:
             pass
+
+        if self.all_robots_done:
+            done = True
 
         return self.observation, r, done, info
 

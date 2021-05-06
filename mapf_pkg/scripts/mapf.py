@@ -6,6 +6,7 @@ import torch
 import random
 import numpy as np
 import utils
+import time
 
 arg_fmt = argparse.ArgumentDefaultsHelpFormatter
 parser = argparse.ArgumentParser(description='Reinforcement Learning Arguments',
@@ -25,7 +26,7 @@ parser.add_argument('--map-resolution', default=0.01, type=float,
 args = parser.parse_args()
 
 ## Tmp
-goals = [(2.1, 2.1, 0), (-1.8, 1.8, 3.14), (1.5, -1.5, 3.14), (-2.1, -2.1, 0)]
+goals = [(2.1, 2.1, 0.0), (-1.8, 1.8, 3.14), (1.5, -1.5, 3.14), (-2.1, -2.1, 0.0)]
 
 ## RL Args
 MAX_EPISODES = 200
@@ -74,18 +75,21 @@ for i_episode in range(MAX_EPISODES):
         # env.render() ## It costs time
 
         # a = env.action_space.sample()
-        a = np.clip([env.current_goal_x - env.current_robot_x, env.current_goal_y - env.current_robot_y, env.current_goal_yaw - env.current_robot_yaw], -0.1, 0.1)
+        a = np.clip([env._current_goal_x - env._current_robot_x, env._current_goal_y - env._current_robot_y, env._current_goal_yaw - env._current_robot_yaw], -0.1, 0.1)
         o, r, done, info = env.step(a)
         # print("Agent take {} and get {} {} {}".format(a, r, done, info))
 
         total_reward += r
 
-        print("EP {}, Step {}: reward | {} total_reward | {}".format(i_episode, t, r, total_reward))
+        if t % 50 == 0: print("EP {}, Step {}: reward | {} total_reward | {}".format(i_episode, t, r, total_reward))
 
         if info:
             print(info)
 
-        if done or t >= MAX_EP_STEPS:
+        if t >= MAX_EP_STEPS:
+            env.i_am_done = True
+
+        if done:
             break
 
         t += 1
