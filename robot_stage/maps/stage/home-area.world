@@ -37,7 +37,7 @@ floorplan
 )
 
 # throw in robots
-timda(pose [  2.0  2.0 0.0 0.0 ] name "R1" color "green")
-timda(pose [ -2.0  2.0 0.0 0.0 ] name "R2" color "red")
-timda(pose [  2.0 -2.0 0.0 0.0 ] name "R3" color "blue")
-timda(pose [ -2.0 -2.0 0.0 0.0 ] name "R4" color "pink")
+timda(pose [  2.0  2.0 0.0 0.0 ] name "R0" color "green")
+timda(pose [ -2.0  2.0 0.0 0.0 ] name "R1" color "red")
+timda(pose [  2.0 -2.0 0.0 0.0 ] name "R2" color "blue")
+timda(pose [ -2.0 -2.0 0.0 0.0 ] name "R3" color "pink")
