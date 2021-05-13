@@ -38,6 +38,5 @@ define timda position
   drive "omni"
   color "gray"
   
-  # kinect(pose [ -0.1 0.0 -0.11 0.0 ])
-  hokuyolaser(pose [ 0.15 0.0 -0.2 0.0 ])
+  # hokuyolaser(pose [ 0.15 0.0 -0.2 0.0 ])
 )

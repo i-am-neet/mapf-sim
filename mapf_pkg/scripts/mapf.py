@@ -26,7 +26,7 @@ parser.add_argument('--map-resolution', default=0.01, type=float,
 args = parser.parse_args()
 
 ## Tmp
-goals = [(2.1, 2.1, 0.0), (-1.8, 1.8, 3.14), (1.5, -1.5, 3.14), (-2.1, -2.1, 0.0)]
+goals = [(2.1, 2.1, 0.0), (-1.8, 1.8, 0.0), (1.5, -1.5, 0.0), (-2.1, -2.1, 0.0)]
 
 ## RL Args
 MAX_EPISODES = 1000

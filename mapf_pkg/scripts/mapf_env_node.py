@@ -296,7 +296,10 @@ class StageEnv(gym.Env):
         self._sync_obs_ready = False
         self._current_robot_done = False
 
-        self.__action_to_vel(u)
+        if self._current_robot_done:
+            self.__action_to_vel([0, 0, 0])
+        else:
+            self.__action_to_vel(u)
 
         # moving cost
         r = -1
@@ -377,19 +380,20 @@ class StageEnv(gym.Env):
 
     def __reset_all_robots(self):
         """
-        Reset all robots' position by robot 0
+        # Reset all robots' position by robot 0
+        Reset all robots' position
         """
 
         self.__stop_all_robots()
         time.sleep(3)
 
-        if self.current_robot_num == 0:
-            print("I am robot 0, I reset Env.")
-            try:
-                reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
-                reset_env()
-            except rospy.ServiceException as e:
-                print("Service call failed: {}".format(e))
+        # if self.current_robot_num == 0:
+        #     print("I am robot 0, I reset Env.")
+        try:
+            reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+            reset_env()
+        except rospy.ServiceException as e:
+            print("Service call failed: {}".format(e))
 
     def close(self):
         pass
