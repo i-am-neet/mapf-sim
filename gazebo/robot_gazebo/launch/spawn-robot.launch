@@ -1,8 +1,7 @@
 <launch>
-  <arg name="id" default="0" />
-  <arg name="x_pos" default="1.5" />
-  <arg name="y_pos" default="-1.5" />
-  <arg name="z_pos" default="0.0" />
+  <arg name="id" />
+  <arg name="x_pos" />
+  <arg name="y_pos" />
 
   <param name="robot_description" command="$(find xacro)/xacro $(find robot_description)/urdf/simple-omni-robot.xacro" />
   <node name="spawn_model"
@@ -11,7 +10,7 @@
         args="-urdf -model robot$(arg id)
               -x $(arg x_pos)
               -y $(arg y_pos)
-              -z $(arg z_pos)
+              -z 0.0
               -param robot_description"
         output="screen" />
 
