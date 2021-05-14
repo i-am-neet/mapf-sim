@@ -19,6 +19,7 @@ $ source $HOME/mapf/bin/active
 Simulator:
 ```bash
 $ sudo apt install python3-catkin-pkg
+$ sudo apt install ros-noetic-hector-sensors-description
 ```
 
 Build Stage from source
