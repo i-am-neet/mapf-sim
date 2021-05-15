@@ -1,7 +1,8 @@
 <launch>
   <arg name="id" />
-  <arg name="x_pos" />
-  <arg name="y_pos" />
+  <arg name="x_pos" /> <!-- Meters -->
+  <arg name="y_pos" /> <!-- Meters -->
+  <arg name="yaw_pos" /> <!-- Radians -->
 
   <param name="robot_description" command="$(find xacro)/xacro $(find robot_description)/urdf/simple-omni-robot.xacro" />
   <node name="spawn_model"
@@ -11,6 +12,9 @@
               -x $(arg x_pos)
               -y $(arg y_pos)
               -z 0.0
+              -R 0.0
+              -P 0.0
+              -Y $(arg yaw_pos)
               -param robot_description"
         output="screen" />
 
