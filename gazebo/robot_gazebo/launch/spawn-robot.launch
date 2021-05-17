@@ -4,6 +4,7 @@
   <arg name="y_pos" /> <!-- Meters -->
   <arg name="yaw_pos" /> <!-- Radians -->
 
+  <group ns="robot$(arg id)">
   <param name="robot_description" command="$(find xacro)/xacro $(find robot_description)/urdf/simple-omni-robot.xacro" />
   <node name="spawn_model"
         pkg="gazebo_ros"
@@ -21,5 +22,6 @@
   <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
     <param name="publish_frequency" type="double" value="30.0" />
   </node>
+  </group>
 
 </launch>
