@@ -1,4 +1,6 @@
 <launch>
+  <arg name="map_file"       default=" $(find robot_gazebo)/maps/home-area.yaml"/> <!-- robopark_plan -->
+
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(find robot_gazebo)/worlds/home-area.world"/>
     <arg name="paused" value="false"/>
@@ -7,4 +9,11 @@
     <arg name="recording" value="false"/>
     <arg name="debug" value="false"/>
   </include>
+
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)">
+    <param name="frame_id" value="map"/>
+  </node>
+
+  <param name="robot_description" command="$(find xacro)/xacro $(find robot_description)/urdf/simple-omni-robot.xacro" />
+
 </launch>

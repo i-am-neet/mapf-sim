@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="ns" />
+  <arg name="odom_frame" />
+
+  <group ns="$(arg ns)">
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_odom_broadcaster" args="-0.026 0.042 0.0 0.0 0.0 0.0 1 map '$(arg odom_frame)'" />
+  </group>
+</launch>
