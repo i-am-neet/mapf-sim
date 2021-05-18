@@ -1,0 +1,7 @@
+image: home-area.png
+resolution: 0.01
+# origin: [-51.224998, -51.224998, 0.000000]
+origin: [-3.0, -3.0, 0.0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

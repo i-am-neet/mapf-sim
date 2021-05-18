@@ -1,0 +1,6 @@
+global_costmap:
+  static_map: true
+  # transform_tolerance: 0.05
+  plugins:
+    - {name: static_layer,            type: "costmap_2d::StaticLayer"}
+    - {name: obstacle_layer,          type: "costmap_2d::VoxelLayer"}
