@@ -6,7 +6,8 @@
 
 
   <group ns="robot$(arg id)">
-    <param name="tf_prefix" value="robot$(arg id)_tf" />
+    <!-- ROS Noetic -->
+    <param name="tf_prefix" value="robot$(arg id)" />
     <param name="robot_description" command="$(find xacro)/xacro $(find robot_description)/urdf/simple-omni-robot.xacro" />
     <node name="spawn_model"
           pkg="gazebo_ros"

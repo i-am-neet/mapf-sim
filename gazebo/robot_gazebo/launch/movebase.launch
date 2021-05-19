@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="robot" />
-  <arg name="base_frame" default="base_link" />
-  <arg name="odom_frame" default="odom" />
+  <arg name="base_frame" />
+  <arg name="odom_frame" />
   <arg name="map_frame" default="map" />
 
   <node pkg="move_base" type="move_base" respawn="true" name="$(arg robot)_move_base" output="screen">
