@@ -18,8 +18,9 @@ $ source $HOME/mapf/bin/active
 ## Install requirement package
 Simulator:
 ```bash
-$ sudo apt install python3-catkin-pkg
+$ sudo apt install screen python3-catkin-pkg
 $ sudo apt install ros-noetic-hector-sensors-description
+$ sudo apt install ros-noetic-map-server
 ```
 
 Build Stage from source
@@ -54,7 +55,7 @@ $ pip install -r requirements.txt
 ```bash
 $ cd $HOME
 $ mkdir -p mapf_ws/src && cd mapf_ws
-$ git clone https://github.com/i-am-neet/mapf-sim.git src/
+$ git clone --recursive https://github.com/i-am-neet/mapf-sim.git src/
 $ catkin_make
 ```
 
