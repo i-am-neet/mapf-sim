@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="simple_omni_robot">
+  <!-- robot_state_publisher no longer support tf_prefix in ROS Noetic...-->
+  <xacro:arg name="link_prefix" default="" />
+
   <xacro:include filename="$(find hector_sensors_description)/urdf/hokuyo_utm30lx.urdf.xacro" />
   <xacro:include filename="$(find robot_description)/urdf/simple-omni-robot.gazebo" />
   <!-- According TB3 -->
   <xacro:property name="RADIUS" value="0.105" />
   <xacro:property name="HEIGHT" value="0.192" />
 
-  <xacro:hokuyo_utm30lx name="lidar" parent="base_link" ros_topic="laser"
+  <xacro:hokuyo_utm30lx name="$(arg link_prefix)/lidar" parent="$(arg link_prefix)/base_link" ros_topic="laser"
                         update_rate="30" ray_count="270"
                         min_angle="-135" max_angle="135">
     <!-- Place lidar on the top and back of robot, lidar size is W60xD60xH87mm -->
@@ -15,7 +18,7 @@
   </xacro:hokuyo_utm30lx>
 
   <!-- Links -->
-  <link name="head">
+  <link name="$(arg link_prefix)/head">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
@@ -24,7 +27,7 @@
     </visual>
   </link>
 
-  <link name="base_footprint">
+  <link name="$(arg link_prefix)/base_footprint">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
@@ -33,7 +36,7 @@
     </visual>
   </link>
 
-  <link name="base_link">
+  <link name="$(arg link_prefix)/base_link">
     <inertial>
       <!-- <origin xyz="0 0 ${HEIGHT/2}" rpy="0 0 0" /> -->
       <origin xyz="0 0 0" rpy="0 0 0" />
@@ -79,15 +82,15 @@
   <!-- Joints -->
   <joint name="head_joint" type="fixed">
     <origin xyz="${RADIUS} 0 ${HEIGHT/2}" rpy="0 0 0" />
-    <parent link="base_link"/>
-    <child link="head" />
+    <parent link="$(arg link_prefix)/base_link"/>
+    <child link="$(arg link_prefix)/head" />
   </joint>
 
   <joint name="base_link_joint" type="fixed">
     <origin xyz="0.0 0 ${HEIGHT/2}" rpy="0 0 0" />
-    <parent link="base_footprint"/>
-    <child link="base_link" />
+    <parent link="$(arg link_prefix)/base_footprint"/>
+    <child link="$(arg link_prefix)/base_link" />
   </joint>
 
-  <xacro:simple_omni_robot_gazebo />
+  <xacro:simple_omni_robot_gazebo prefix="$(arg link_prefix)" />
 </robot>
