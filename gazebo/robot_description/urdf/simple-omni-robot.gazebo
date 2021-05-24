@@ -7,10 +7,10 @@
   <xacro:macro name="simple_omni_robot_gazebo" params="prefix">
     <gazebo>
       <plugin name="object_controller" filename="libgazebo_ros_planar_move.so">
-        <commandTopic>${prefix}/mobile/cmd_vel</commandTopic>
-        <odometryTopic>${prefix}/odom</odometryTopic>
+        <commandTopic>mobile/cmd_vel</commandTopic>
+        <odometryTopic>odom</odometryTopic>
         <odometryFrame>${prefix}/odom</odometryFrame>
-        <odometryRate>20.0</odometryRate>
+        <odometryRate>30.0</odometryRate>
         <robotBaseFrame>${prefix}/base_footprint</robotBaseFrame>
         <publishTF>true</publishTF>
       </plugin>
