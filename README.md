@@ -21,6 +21,7 @@ Simulator:
 $ sudo apt install screen python3-catkin-pkg
 $ sudo apt install ros-noetic-hector-sensors-description
 $ sudo apt install ros-noetic-map-server
+$ sudo apt install ros-noetic-move-base
 ```
 
 Build Stage from source
