@@ -75,9 +75,9 @@ class StageEnv(gym.Env):
         rospy.init_node('mapf_env_node', anonymous=True)
 
         # Publisher
-        self._pub_vel = rospy.Publisher('/stage/robot_{}/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
-        self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
-        self._pub_done = rospy.Publisher('/stage/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
+        self._pub_vel = rospy.Publisher('/robot_{}/mobile/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
+        # self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
+        self._pub_done = rospy.Publisher('/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
         # Register all topics for message_filters
         _subscribers = []
@@ -85,8 +85,8 @@ class StageEnv(gym.Env):
         print("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
         _subscribers.append(_sub_obs)
         for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/stage/robot_{}/odom".format(str(i)), Odometry)
-            print("/stage/robot_{}/odom".format(str(i)))
+            _sub_obs = message_filters.Subscriber("/robot_{}/mobile/odom".format(str(i)), Odometry)
+            print("/robot_{}/mobile/odom".format(str(i)))
             _subscribers.append(_sub_obs)
 
         ts = message_filters.TimeSynchronizer(_subscribers, 10)
@@ -99,8 +99,8 @@ class StageEnv(gym.Env):
 
         _subscribers_done = []
         for i in range(0, self.robots_num):
-            _sub_done = message_filters.Subscriber("/stage/robot_{}/done".format(str(i)), Bool)
-            print("/stage/robot_{}/done".format(str(i)))
+            _sub_done = message_filters.Subscriber("/robot_{}/done".format(str(i)), Bool)
+            print("/robot_{}/done".format(str(i)))
             _subscribers_done.append(_sub_done)
 
         ts_done = message_filters.ApproximateTimeSynchronizer(_subscribers_done, 10, 0.1, allow_headerless=True)
@@ -342,6 +342,7 @@ class StageEnv(gym.Env):
         msg.angular.z = action[2]
         self._pub_vel.publish(msg)
 
+    # TODO: Change to Gazebo
     def __reset_current_robot(self):
         """
         Reset current robot's position to _current_robot_init_(x, y, yaw)
@@ -360,7 +361,7 @@ class StageEnv(gym.Env):
         init_pose.orientation.z = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[2]
         init_pose.orientation.w = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[3]
 
-        self._pub_pose.publish(init_pose)
+        # self._pub_pose.publish(init_pose)
 
     def __stop_all_robots(self):
         """
@@ -384,13 +385,15 @@ class StageEnv(gym.Env):
         Reset all robots' position
         """
 
-        self.__stop_all_robots()
-        time.sleep(3)
+        ## stop robots for Stage
+        # self.__stop_all_robots()
+        # time.sleep(3)
 
         # if self.current_robot_num == 0:
         #     print("I am robot 0, I reset Env.")
         try:
-            reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+            # reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
+            reset_env = rospy.ServiceProxy('/gazebo/reset_world', EmptySrv)
             reset_env()
         except rospy.ServiceException as e:
             print("Service call failed: {}".format(e))
