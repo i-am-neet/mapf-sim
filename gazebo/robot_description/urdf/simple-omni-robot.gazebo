@@ -17,6 +17,16 @@
     </gazebo>
 
     <gazebo reference="${prefix}/base_link">
+      <sensor name="contactsensor_sensor" type="contact">
+        <always_on>true</always_on>
+        <contact>
+          <collision>${prefix}/base_footprint_fixed_joint_lump__collision_collision</collision>
+        </contact>
+        <plugin name="bumper_plugin" filename="libgazebo_ros_bumper.so">
+          <bumperTopicName>bumper</bumperTopicName>
+          <frameName>${prefix}/base_link</frameName>
+        </plugin>
+      </sensor>
       <mu1>0.0</mu1>
       <mu2>0.0</mu2>
       <material>Gazebo/Orange</material>
