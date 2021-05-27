@@ -17,14 +17,16 @@
     </gazebo>
 
     <gazebo reference="${prefix}/base_link">
-      <sensor name="contactsensor_sensor" type="contact">
-        <always_on>true</always_on>
+      <sensor name="contacts" type="contact">
         <contact>
-          <collision>${prefix}/base_footprint_fixed_joint_lump__collision_collision</collision>
+          <collision>${prefix}/base_footprint_fixed_joint_lump__baselink_collision</collision>
         </contact>
-        <plugin name="bumper_plugin" filename="libgazebo_ros_bumper.so">
+        <plugin name="gazebo_ros_bumper_controller" filename="libgazebo_ros_bumper.so">
+          <always_on>true</always_on>
           <bumperTopicName>bumper</bumperTopicName>
-          <frameName>${prefix}/base_link</frameName>
+          <frameName>${prefix}/bumper</frameName>
+          <visualize>true</visualize>
+          <update_rate>30.0</update_rate>        
         </plugin>
       </sensor>
       <mu1>0.0</mu1>
@@ -37,5 +39,6 @@
       <mu2>0.0</mu2>
       <material>Gazebo/Blue</material>
     </gazebo>
+
   </xacro:macro>
 </robot>
