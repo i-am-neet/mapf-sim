@@ -9,7 +9,8 @@ from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Bool
-from stage_ros.msg import Stall
+# from stage_ros.msg import Stall
+from gazebo_msgs.msg import ContactsState
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import cv2
 import utils
@@ -69,7 +70,7 @@ class StageEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=255, shape=(self.map_height, self.map_width, 4), dtype=np.uint8)
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
-        self._stalled_robots = tuple()
+        # self._stalled_robots = tuple()
         self._done_robots = tuple()
 
         rospy.init_node('mapf_env_node', anonymous=True)
@@ -79,6 +80,7 @@ class StageEnv(gym.Env):
         # self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
         self._pub_done = rospy.Publisher('/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
+        # Subscriber
         # Register all topics for message_filters
         _subscribers = []
         _sub_obs = message_filters.Subscriber("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
@@ -92,7 +94,8 @@ class StageEnv(gym.Env):
         ts = message_filters.TimeSynchronizer(_subscribers, 10)
         ts.registerCallback(self.__callback)
 
-        _sub_stall = rospy.Subscriber("/stalled_robots", Stall, self.__stalled_callback)
+        # _sub_stall = rospy.Subscriber("/stalled_robots", Stall, self.__stalled_callback)
+        _sub_collision = rospy.Subscriber("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState, self.__collision_callback)
 
         # Flags
         self._sync_obs_ready = False
@@ -244,13 +247,24 @@ class StageEnv(gym.Env):
     def i_am_done(self, done):
         self._current_robot_done = done
 
-    def __stalled_callback(self, data):
+    def __collision_callback(self, data):
         """
-        Get stalled robots' info from stage.
-        NOTICE: robot's number is count from 0 in stage, so need to +1
+        Get model contact status by gazebo bumper plugin.
+        NOTICE: In this data, gets contact pair between models.
         """
+        print("Collision Length: {}".format(len(data.states)))
+        for i, e in enumerate(data.states):
+            print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
+        
+        time.sleep(0.8)
 
-        self._stalled_robots = tuple(i for i in data.stalled_robots_num)
+    # def __stalled_callback(self, data):
+    #     """
+    #     Get stalled robots' info from stage.
+    #     NOTICE: robot's number is count from 0 in stage, so need to +1
+    #     """
+
+    #     self._stalled_robots = tuple(i for i in data.stalled_robots_num)
 
     def render(self):
         """
@@ -313,11 +327,11 @@ class StageEnv(gym.Env):
                     self._current_robot_done = True
                     r = 100
 
-        # The robot which is in collision will get punishment
-        if self.current_robot_num in self._stalled_robots:
-            self._current_robot_done = True
-            r = -100
-            info = {"Somebody screw up: {}".format(self._stalled_robots)}
+        ## The robot which is in collision will get punishment
+        # if self.current_robot_num in self._stalled_robots:
+        #     self._current_robot_done = True
+        #     r = -100
+        #     info = {"Somebody screw up: {}".format(self._stalled_robots)}
 
         self._pub_done.publish(self._current_robot_done)
 
