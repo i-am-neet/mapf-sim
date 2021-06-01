@@ -19,6 +19,7 @@ import re
 import gym
 from gym import spaces
 from gym.utils import seeding
+from signal import signal, SIGINT
 
 import torch
 
@@ -37,6 +38,8 @@ class StageEnv(gym.Env):
 
         if len(goals) != robots_num:
             raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
+
+        signal(SIGINT, self.exit_handler)
 
         # Initialize variables of Environment
         self.goals = goals
@@ -76,7 +79,6 @@ class StageEnv(gym.Env):
 
         # Publisher
         self._pub_vel = rospy.Publisher('/robot{}/mobile/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
-        # self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
         self._pub_done = rospy.Publisher('/robot{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
         # Subscriber
@@ -318,12 +320,8 @@ class StageEnv(gym.Env):
         done = False
         info = {}
         self._sync_obs_ready = False
-        self._current_robot_done = False
 
-        if self._current_robot_done:
-            self.__action_to_vel([0, 0, 0])
-        else:
-            self.__action_to_vel(u)
+        self.__action_to_vel(u)
 
         # moving cost
         r = -1
@@ -366,30 +364,9 @@ class StageEnv(gym.Env):
         msg.angular.z = action[2]
         self._pub_vel.publish(msg)
 
-    # TODO: Change to Gazebo
-    def __reset_current_robot(self):
+    def stop_robot(self):
         """
-        Reset current robot's position to _current_robot_init_(x, y, yaw)
-        """
-
-        # Need to stop robot for a while before resetting pose!!!!!
-        self.__action_to_vel([0, 0, 0])
-        time.sleep(3)
-
-        init_pose = Pose()
-        init_pose.position.x = self._current_robot_init_x
-        init_pose.position.y = self._current_robot_init_y
-        init_pose.position.z = 0
-        init_pose.orientation.x = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[0]
-        init_pose.orientation.y = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[1]
-        init_pose.orientation.z = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[2]
-        init_pose.orientation.w = quaternion_from_euler(0, 0, self._current_robot_init_yaw)[3]
-
-        # self._pub_pose.publish(init_pose)
-
-    def __stop_all_robots(self):
-        """
-        Publish cmd_vel: (0, 0, 0) to all robots
+        Stop current robot
         """
         msg = Twist()
         msg.linear.x = 0
@@ -399,24 +376,14 @@ class StageEnv(gym.Env):
         msg.angular.y = 0
         msg.angular.z = 0
 
-        for i in range(0, self.robots_num):
-            _pub = rospy.Publisher('/stage/robot_{}/cmd_vel'.format(i), Twist, queue_size=1)
-            _pub.publish(msg)
+        self._pub_vel.publish(msg)
 
     def __reset_all_robots(self):
         """
-        # Reset all robots' position by robot 0
         Reset all robots' position
         """
 
-        ## stop robots for Stage
-        # self.__stop_all_robots()
-        # time.sleep(3)
-
-        # if self.current_robot_num == 0:
-        #     print("I am robot 0, I reset Env.")
         try:
-            # reset_env = rospy.ServiceProxy('/reset_positions', EmptySrv)
             reset_env = rospy.ServiceProxy('/gazebo/reset_world', EmptySrv)
             reset_env()
         except rospy.ServiceException as e:
@@ -426,14 +393,12 @@ class StageEnv(gym.Env):
         pass
 
     def __del__(self):
-        # Stop robot
-        msg = Twist()
-        msg.linear.x = 0
-        msg.linear.y = 0
-        msg.linear.z = 0
-        msg.angular.x = 0
-        msg.angular.y = 0
-        msg.angular.z = 0
-        self._pub_vel.publish(msg)
+        self.stop_robot()
         # Close cv
         cv2.destroyAllWindows()
+
+    def exit_handler(self, signal_received, frame):
+        # Handle any cleanup here
+        self.stop_robot()
+        print('SIGINT or CTRL-C detected. Exiting gracefully')
+        exit(0)
