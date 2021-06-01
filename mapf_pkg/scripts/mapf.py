@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from mapf_env_node import StageEnv
-from signal import signal, SIGINT
 import argparse
 import torch
 import random
@@ -28,16 +27,13 @@ args = parser.parse_args()
 ## Tmp
 goals = [(2.1, 2.1, 0.0), (-1.8, 1.8, 0.0), (1.5, -1.5, 0.0), (-2.1, -2.1, 0.0)]
 
+## Flags
+FLAG_COLLISION = False
+FLAG_TIMEOUT = False
+
 ## RL Args
 MAX_EPISODES = 1000
 MAX_EP_STEPS = 500
-
-def exit_handler(signal_received, frame):
-    # Handle any cleanup here
-    print('SIGINT or CTRL-C detected. Exiting gracefully')
-    exit(0)
-
-signal(SIGINT, exit_handler)
 
 if args.current_robot_num is None:
     print("Please set argument '--current-robot-num'")
@@ -65,6 +61,8 @@ total_reward = 0
 for i_episode in range(MAX_EPISODES):
 
     done = False
+    FLAG_COLLISION = False
+    FLAG_TIMEOUT = False
     t = 0
     o = env.reset()
 
@@ -74,11 +72,14 @@ for i_episode in range(MAX_EPISODES):
     while not done:
         # env.render() ## It costs time
 
-        a = env.action_space.sample()
-        # dx = env._current_goal_x - env._current_robot_x
-        # dy = env._current_goal_y - env._current_robot_y
-        # dyaw = env._current_goal_yaw - env._current_robot_yaw
-        # a = np.array([dx, dy, dyaw]).clip(-0.1, 0.1)
+        # a = env.action_space.sample()
+        if FLAG_COLLISION or FLAG_TIMEOUT:
+            a = np.array([0, 0, 0])
+        else:
+            dx = env._current_goal_x - env._current_robot_x
+            dy = env._current_goal_y - env._current_robot_y
+            dyaw = env._current_goal_yaw - env._current_robot_yaw
+            a = np.array([dx, dy, dyaw]).clip(-0.1, 0.1)
         o, r, done, info = env.step(a)
         # print("Agent take {} and get {} {} {}".format(a, r, done, info))
 
@@ -88,9 +89,12 @@ for i_episode in range(MAX_EPISODES):
 
         if info:
             print(info)
+            if "collision" in info:
+                FLAG_COLLISION = True
 
         if t >= MAX_EP_STEPS:
             env.i_am_done = True
+            FLAG_TIMEOUT = True
 
         if done:
             break
