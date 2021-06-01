@@ -9,7 +9,6 @@ from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Bool
-# from stage_ros.msg import Stall
 from gazebo_msgs.msg import ContactsState
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import cv2
@@ -59,6 +58,7 @@ class StageEnv(gym.Env):
         self._current_goal_y = 0
         self._current_goal_yaw = 0
         self.robots_position = list()
+        self._collision = False
 
         # Initialize tensors of Observations
         self.local_map = torch.zeros(1)
@@ -70,31 +70,30 @@ class StageEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=255, shape=(self.map_height, self.map_width, 4), dtype=np.uint8)
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
-        # self._stalled_robots = tuple()
         self._done_robots = tuple()
 
         rospy.init_node('mapf_env_node', anonymous=True)
 
         # Publisher
-        self._pub_vel = rospy.Publisher('/robot_{}/mobile/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
+        self._pub_vel = rospy.Publisher('/robot{}/mobile/cmd_vel'.format(self.current_robot_num), Twist, queue_size=1)
         # self._pub_pose = rospy.Publisher('/stage/robot_{}/cmd_pose'.format(self.current_robot_num), Pose, queue_size=1)
-        self._pub_done = rospy.Publisher('/robot_{}/done'.format(self.current_robot_num), Bool, queue_size=1)
+        self._pub_done = rospy.Publisher('/robot{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
         # Subscriber
         # Register all topics for message_filters
         _subscribers = []
-        _sub_obs = message_filters.Subscriber("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
-        print("/robot_{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
+        _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
+        print("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
         _subscribers.append(_sub_obs)
         for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot_{}/mobile/odom".format(str(i)), Odometry)
-            print("/robot_{}/mobile/odom".format(str(i)))
+            _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
+            print("/robot{}/mobile/odom".format(str(i)))
             _subscribers.append(_sub_obs)
 
-        ts = message_filters.TimeSynchronizer(_subscribers, 10)
+        # ts = message_filters.TimeSynchronizer(_subscribers, 10)
+        ts = message_filters.ApproximateTimeSynchronizer(_subscribers, 10, 0.1, allow_headerless=True)
         ts.registerCallback(self.__callback)
 
-        # _sub_stall = rospy.Subscriber("/stalled_robots", Stall, self.__stalled_callback)
         _sub_collision = rospy.Subscriber("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState, self.__collision_callback)
 
         # Flags
@@ -102,8 +101,8 @@ class StageEnv(gym.Env):
 
         _subscribers_done = []
         for i in range(0, self.robots_num):
-            _sub_done = message_filters.Subscriber("/robot_{}/done".format(str(i)), Bool)
-            print("/robot_{}/done".format(str(i)))
+            _sub_done = message_filters.Subscriber("/robot{}/done".format(str(i)), Bool)
+            print("/robot{}/done".format(str(i)))
             _subscribers_done.append(_sub_done)
 
         ts_done = message_filters.ApproximateTimeSynchronizer(_subscribers_done, 10, 0.1, allow_headerless=True)
@@ -252,19 +251,30 @@ class StageEnv(gym.Env):
         Get model contact status by gazebo bumper plugin.
         NOTICE: In this data, gets contact pair between models.
         """
-        print("Collision Length: {}".format(len(data.states)))
+        self._collision = False
+        # print("Collision Length: {}".format(len(data.states)))
         for i, e in enumerate(data.states):
-            print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
+            # print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
+            A = [e.collision1_name, e.collision2_name]
+
+            if any('ground_plane' in a.lower() for a in A):
+                # Ignore collision with ground_plane
+                break
+            elif any('wall' in a.lower() for a in A):
+                # print("{} Hit the wall!!!!!".format(c))
+                self._collision = True
+                break
+            elif any('door' in a.lower() for a in A):
+                # print("{} Hit the wall!!!!!".format(c))
+                self._collision = True
+                break
+            elif all('robot' in a.lower() for a in A):
+                # print("{} Hit other robot!!".format(c))
+                self._collision = True
+                break
+            else:
+                raise Exception("Unknown collision condition, collision pair:\n {} <---> {}".format(A[0], A[1]))
         
-        time.sleep(0.8)
-
-    # def __stalled_callback(self, data):
-    #     """
-    #     Get stalled robots' info from stage.
-    #     NOTICE: robot's number is count from 0 in stage, so need to +1
-    #     """
-
-    #     self._stalled_robots = tuple(i for i in data.stalled_robots_num)
 
     def render(self):
         """
@@ -328,10 +338,10 @@ class StageEnv(gym.Env):
                     r = 100
 
         ## The robot which is in collision will get punishment
-        # if self.current_robot_num in self._stalled_robots:
-        #     self._current_robot_done = True
-        #     r = -100
-        #     info = {"Somebody screw up: {}".format(self._stalled_robots)}
+        if self._collision:
+            self._current_robot_done = True
+            r = -10
+            info = {"I got collision..."}
 
         self._pub_done.publish(self._current_robot_done)
 
@@ -416,4 +426,14 @@ class StageEnv(gym.Env):
         pass
 
     def __del__(self):
+        # Stop robot
+        msg = Twist()
+        msg.linear.x = 0
+        msg.linear.y = 0
+        msg.linear.z = 0
+        msg.angular.x = 0
+        msg.angular.y = 0
+        msg.angular.z = 0
+        self._pub_vel.publish(msg)
+        # Close cv
         cv2.destroyAllWindows()

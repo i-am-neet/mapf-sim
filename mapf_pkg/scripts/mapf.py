@@ -74,11 +74,11 @@ for i_episode in range(MAX_EPISODES):
     while not done:
         # env.render() ## It costs time
 
-        # a = env.action_space.sample()
-        dx = env._current_goal_x - env._current_robot_x
-        dy = env._current_goal_y - env._current_robot_y
-        dyaw = env._current_goal_yaw - env._current_robot_yaw
-        a = np.array([dx, dy, dyaw]).clip(-0.1, 0.1)
+        a = env.action_space.sample()
+        # dx = env._current_goal_x - env._current_robot_x
+        # dy = env._current_goal_y - env._current_robot_y
+        # dyaw = env._current_goal_yaw - env._current_robot_yaw
+        # a = np.array([dx, dy, dyaw]).clip(-0.1, 0.1)
         o, r, done, info = env.step(a)
         # print("Agent take {} and get {} {} {}".format(a, r, done, info))
 

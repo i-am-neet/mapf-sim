@@ -2,10 +2,30 @@
 import rospy
 from gazebo_msgs.msg import ContactsState
 
+c = 0
+current_number = input("Input robot number: ")
+
 def callback(data):
-    print("Length {}".format(len(data.states)))
+    global c
+    # print("Length {}".format(len(data.states)))
     for i, e in enumerate(data.states):
-        print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
+        # print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
+        A = [e.collision1_name, e.collision2_name]
+
+        if any('ground_plane' in a.lower() for a in A):
+            break
+        elif any('wall' in a.lower() for a in A):
+            print("{} Hit the wall!!!!!".format(c))
+            c+=1
+        elif all('robot' in a.lower() for a in A):
+            print("{} Hit other robot!!".format(c))
+            c+=1
+        else:
+            print(A[0])
+            print("{} Other condition????".format(c))
+            print(A[1])
+            print()
+            c+=1
     
 def listener():
 
@@ -16,7 +36,7 @@ def listener():
     # run simultaneously.
     rospy.init_node('listener', anonymous=True)
 
-    rospy.Subscriber("/robot0/bumper", ContactsState, callback)
+    rospy.Subscriber("/robot{}/bumper".format(input("Input : ")), ContactsState, callback)
 
     # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
