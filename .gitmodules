@@ -1,3 +1,6 @@
 [submodule "stage_ros"]
 	path = stage_ros
 	url = https://github.com/i-am-neet/stage_ros.git
+[submodule "gazebo_ros_model_color"]
+	path = gazebo_ros_model_color
+	url = git@github.com:i-am-neet/gazebo_ros_model_color.git
