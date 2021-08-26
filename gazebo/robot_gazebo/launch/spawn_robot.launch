@@ -8,7 +8,8 @@
   <group ns="robot$(arg id)">
     <param name="robot_description" command="$(find xacro)/xacro
                  '$(find robot_description)/urdf/simple-omni-robot.xacro'
-                 link_prefix:='robot$(arg id)'" />
+                 link_prefix:='robot$(arg id)'
+                 id_num:='$(arg id)'" />
     <node name="spawn_model"
           pkg="gazebo_ros"
           type="spawn_model"

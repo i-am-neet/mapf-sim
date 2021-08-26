@@ -4,7 +4,10 @@
      Commit Version: 1.5.1-0-g916b5db  Build Version: 1.5.7152.31018
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:macro name="simple_omni_robot_gazebo" params="prefix">
+  <xacro:property name="YAML_FILE" value="$(find gazebo_ros_model_color)/configs/colors.yaml" />
+  <xacro:property name="COLORS" value="${load_yaml(YAML_FILE)}"/>
+
+  <xacro:macro name="simple_omni_robot_gazebo" params="prefix id_num">
     <gazebo>
       <plugin name="object_controller" filename="libgazebo_ros_planar_move.so">
         <commandTopic>mobile/cmd_vel</commandTopic>
@@ -38,6 +41,19 @@
       <mu1>0.0</mu1>
       <mu2>0.0</mu2>
       <material>Gazebo/Blue</material>
+    </gazebo>
+
+    <gazebo reference="${prefix}/base_link">
+      <visual>
+        <plugin name="gazebo_ros_model_color" filename="libgazebo_ros_model_color.so">
+          <robotNamespace>/</robotNamespace>
+          <serviceName>${prefix}/my_box_color</serviceName>
+          <!-- <color>0.0 1.0 1.0 1.0</color> -->
+          <!-- <color>${COLORS['color_8']}</color> -->
+          <xacro:arg name="color" default="color_${id_num}" />
+          <color>${COLORS['$(arg color)']}</color>
+        </plugin>
+      </visual>
     </gazebo>
 
   </xacro:macro>
