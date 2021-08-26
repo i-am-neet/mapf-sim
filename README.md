@@ -64,9 +64,11 @@ $ catkin_make
 ```bash
 $ cd $HOME/mapf_ws && source devel/setup.bash
 # Start RL env of simualtor
-$ source src/robot_stage/scripts/bringup_all.bash
+$ roslaunch robot_gazebo home_area.launch
+# Bringup robots
+$ source src/gazebo/robot_gazebo/scripts/bringup_all.bash
 # Quit by
-$ source src/robot_stage/scripts/quit_all.bash
+$ source src/gazebo/robot_gazebo/scripts/quit_all.bash
 # MAPF node, each agent needs one
 $ rosrun mapf_pkg mapf.py -h
 usage: mapf.py [-h] [--current-robot-num CURRENT_ROBOT_NUM]
