@@ -1,0 +1,33 @@
+<launch>
+  <arg name="id" />
+  <arg name="x_pos" /> <!-- Meters -->
+  <arg name="y_pos" /> <!-- Meters -->
+  <arg name="yaw_pos" /> <!-- Radians -->
+
+
+  <group ns="goal$(arg id)">
+    <param name="robot_description" command="$(find xacro)/xacro
+                 '$(find robot_description)/urdf/simple-goal.xacro'
+                 link_prefix:='goal$(arg id)'
+                 id_num:='$(arg id)'" />
+    <node name="spawn_model"
+          pkg="gazebo_ros"
+          type="spawn_model"
+          args="-urdf -model goal$(arg id)
+                -x $(arg x_pos)
+                -y $(arg y_pos)
+                -z 0.0
+                -R 0.0
+                -P 0.0
+                -Y $(arg yaw_pos)
+                -param robot_description"
+          output="screen" />
+
+    <!-- <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"> -->
+      <!-- tf2 doesn't support tf_prefix anymore-->
+      <!-- <param name="tf_prefix" value="robot$(arg id)" /> -->
+      <!-- <param name="publish_frequency" type="double" value="30.0" /> -->
+    <!-- </node> -->
+  </group>
+
+</launch>

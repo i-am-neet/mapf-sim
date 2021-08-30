@@ -17,3 +17,13 @@ do
   sleep 0.5
   ((i++))
 done < $(rosls robot_gazebo/config/init_poses.cfg)
+
+let i=0
+while IFS=' ' read -r -a goals_arr;
+do
+  echo "SPAWNING goal$i, pose at: (${goals_arr[0]}, ${goals_arr[1]}, ${goals_arr[2]})..."
+  screen -dmS spawn_goal${i} roslaunch robot_gazebo spawn_goal.launch id:=$i \
+                              x_pos:=${goals_arr[0]} y_pos:=${goals_arr[1]} yaw_pos:=${goals_arr[2]}
+  sleep 0.5
+  ((i++))
+done < $(rosls robot_gazebo/config/init_goals.cfg)

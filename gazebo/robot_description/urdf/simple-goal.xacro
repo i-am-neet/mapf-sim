@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="simple_omni_robot">
+  <!-- robot_state_publisher no longer support tf_prefix in ROS Noetic...-->
+  <xacro:arg name="link_prefix" default="" />
+  <xacro:arg name="id_num" default="" />
+
+  <xacro:include filename="$(find robot_description)/urdf/simple-goal.gazebo" />
+  <!-- According TB3 -->
+  <xacro:property name="RADIUS" value="0.105" />
+  <xacro:property name="HEIGHT" value="0.192" />
+
+  <!-- Links -->
+  <link name="$(arg link_prefix)/head">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.05 0.05 0.02" />
+      </geometry>
+    </visual>
+  </link>
+
+  <link name="$(arg link_prefix)/base_footprint">
+    <visual>
+      <origin xyz="0 0 0.005" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="${RADIUS}" length="0.01" />
+      </geometry>
+    </visual>
+  </link>
+
+  <link name="$(arg link_prefix)/base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <mass value="50.0" />
+      <inertia
+        ixx="50.0"
+        ixy="0.0"
+        ixz="0.0"
+        iyy="50.0"
+        iyz="0.0"
+        izz="50.0" />
+    </inertial>
+
+    <visual>
+      <geometry>
+        <cylinder radius="${RADIUS}" length="${HEIGHT}" />
+      </geometry>
+    </visual>
+  </link>
+
+  <!-- Joints -->
+  <joint name="head_joint" type="fixed">
+    <origin xyz="${RADIUS} 0 ${HEIGHT/2}" rpy="0 0 0" />
+    <parent link="$(arg link_prefix)/base_link"/>
+    <child link="$(arg link_prefix)/head" />
+  </joint>
+
+  <joint name="base_link_joint" type="fixed">
+    <origin xyz="0.0 0 ${HEIGHT/2+0.01}" rpy="0 0 0" />
+    <parent link="$(arg link_prefix)/base_footprint"/>
+    <child link="$(arg link_prefix)/base_link" />
+  </joint>
+
+  <xacro:simple_goal_gazebo prefix="$(arg link_prefix)" id_num="$(arg id_num)" />
+</robot>
