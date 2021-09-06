@@ -10,10 +10,10 @@ import time
 arg_fmt = argparse.ArgumentDefaultsHelpFormatter
 parser = argparse.ArgumentParser(description='Reinforcement Learning Arguments',
                                  formatter_class=arg_fmt)
-parser.add_argument('--current-robot-num', type=int,
+parser.add_argument('-crn', '--current-robot-num', type=int,
                     help='The number of current robot. (For env)'
                     )
-parser.add_argument('--robots-num', type=int,
+parser.add_argument('-rn', '--robots-num', type=int,
                     help='The amount of all robots. (For env)'
                     )
 parser.add_argument('--robot-diameter', default=0.25, type=float,
