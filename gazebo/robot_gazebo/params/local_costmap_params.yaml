@@ -1,8 +1,8 @@
 local_costmap:
   static_map: false
   rolling_window: true
-  width:  3.0
-  height: 3.0
+  width:  2.0
+  height: 2.0
   resolution: 0.01
   transform_tolerance: 0.3
   plugins:
