@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+INIT_POSES_CFG_FILE=${1:-$(rosls robot_gazebo/config/init_poses.cfg)}
+INIT_GOALS_CFG_FILE=${2:-$(rosls robot_gazebo/config/init_goals.cfg)}
+echo "Read file: $INIT_POSES_CFG_FILE"
+echo "Read file: $INIT_GOALS_CFG_FILE"
+
 let i=0
 while IFS=' ' read -r -a poses_arr;
 do
@@ -16,7 +21,7 @@ do
                                  base_frame:=base_link odom_frame:=odom
   sleep 0.5
   ((i++))
-done < $(rosls robot_gazebo/config/init_poses.cfg)
+done < $INIT_POSES_CFG_FILE
 
 let i=0
 while IFS=' ' read -r -a goals_arr;
@@ -26,4 +31,4 @@ do
                               x_pos:=${goals_arr[0]} y_pos:=${goals_arr[1]} yaw_pos:=${goals_arr[2]}
   sleep 0.5
   ((i++))
-done < $(rosls robot_gazebo/config/init_goals.cfg)
+done < $INIT_GOALS_CFG_FILE

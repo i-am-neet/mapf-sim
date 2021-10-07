@@ -1,0 +1,21 @@
+<launch>
+  <arg name="gui" default="true" />
+  <arg name="verbose" default="true" />
+  <arg name="world_file" default="$(find robot_gazebo)/worlds/empty.world" />
+  <arg name="map_file"       default=" $(find robot_gazebo)/maps/empty.yaml"/>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_file)"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="recording" value="false"/>
+    <arg name="debug" value="false"/>
+    <arg name="verbose" value="$(arg verbose)"/>
+  </include>
+
+  <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)">
+    <param name="frame_id" value="map"/>
+  </node>
+
+</launch>
