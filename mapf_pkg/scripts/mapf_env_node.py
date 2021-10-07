@@ -22,6 +22,7 @@ from gym.utils import seeding
 from signal import signal, SIGINT
 
 import torch
+from torchvision import transforms
 
 ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
 ARRIVED_RANGE_YAW = math.radians(5) # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
@@ -34,7 +35,8 @@ class StageEnv(gym.Env):
                        robots_num,
                        robot_radius,
                        goals,
-                       map_resolution):
+                       map_resolution,
+                       resize_observation):
 
         if len(goals) != robots_num:
             raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
@@ -62,15 +64,17 @@ class StageEnv(gym.Env):
         self._current_goal_yaw = 0
         self.robots_position = list()
         self._collision = False
+        self._max_episode_steps = 200
+        self.resize_observation = resize_observation
 
         # Initialize tensors of Observations
         self.local_map = torch.zeros(1)
         self.agents_map = torch.zeros(1)
         self.my_goal_map = torch.zeros(1)
         self.neighbors_goal_map = torch.zeros(1)
-        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
+        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map)).numpy()
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(self.map_height, self.map_width, 4), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.map_height, self.map_width), dtype=np.uint8)
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
         self._done_robots = tuple()
@@ -145,6 +149,9 @@ class StageEnv(gym.Env):
         # local costmap: tuple -> np.array -> tensor
         self.map_width = data[0].info.width
         self.map_height = data[0].info.height
+        # print("0. {}".format(torch.from_numpy(np.asarray(data[0].data)).shape))
+        # print("1. {}".format(torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)).shape))
+        # print("2. {}".format(torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1)).shape))
         self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
         data = data[1:] # Remove local_costmap, for counting robot's number easily
@@ -212,9 +219,18 @@ class StageEnv(gym.Env):
                     self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
         # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
-        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
-        # self.observation_space = self.observation.size()
-        self.observation_space = spaces.Box(low=0, high=255, shape=(self.map_height, self.map_width, 4), dtype=np.uint8)
+        # print("check shape {} {} {} {}".format(self.local_map.shape, self.my_goal_map.shape, self.agents_map.shape, self.neighbors_goal_map.shape))
+        # Reshape map tensor to 2-dims
+        self.local_map = self.local_map.reshape(self.map_height, self.map_width)
+        self.agents_map = self.local_map.reshape(self.map_height, self.map_width)
+        self.my_goal_map = self.local_map.reshape(self.map_height, self.map_width)
+        self.neighbors_goal_map = self.local_map.reshape(self.map_height, self.map_width)
+        # Observation is stack all map tensor, then convert to np.array
+        o = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
+        # Resize map (resize operation on tensor)
+        transform =  transforms.Resize(self.resize_observation)
+        self.observation = transform(o).numpy()
+        self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.resize_observation, self.resize_observation), dtype=np.uint8)
 
         self._sync_obs_ready = True
 
@@ -283,10 +299,14 @@ class StageEnv(gym.Env):
         Show the observation that contains local_map, agents_map, my_goal_map, and neighbors_goal_map
         """
 
-        _im_local_map = utils.tensor_to_cv(self.local_map, self.map_height, self.map_width)
-        _im_agents_map = utils.tensor_to_cv(self.agents_map, self.map_height, self.map_width)
-        _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.map_height, self.map_width)
-        _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.map_height, self.map_width)
+        # _im_local_map = utils.tensor_to_cv(self.local_map, self.map_height, self.map_width)
+        # _im_agents_map = utils.tensor_to_cv(self.agents_map, self.map_height, self.map_width)
+        # _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.map_height, self.map_width)
+        # _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.map_height, self.map_width)
+        _im_local_map = utils.tensor_to_cv(self.local_map, self.resize_observation, self.resize_observation)
+        _im_agents_map = utils.tensor_to_cv(self.agents_map, self.resize_observation, self.resize_observation)
+        _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.resize_observation, self.resize_observation)
+        _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.resize_observation, self.resize_observation)
 
         _im_tile = utils.concat_tile_resize([[_im_local_map, _im_agents_map],
                                              [_im_my_goal_map, _im_neighbors_goal_map]],
@@ -333,7 +353,7 @@ class StageEnv(gym.Env):
 
                 if i == self.current_robot_num:
                     self._current_robot_done = True
-                    r = 100
+                    r = 20
 
         ## The robot which is in collision will get punishment
         if self._collision:
