@@ -16,7 +16,24 @@
     <param name="global_costmap/robot_base_frame" value="$(arg robot)/$(arg base_frame)" />
     <param name="local_costmap/global_frame" value="$(arg robot)/$(arg odom_frame)" />
     <param name="local_costmap/robot_base_frame" value="$(arg robot)/$(arg base_frame)" />
+
+    <!-- Reduce movebase's frequency -->
+    <param name="controller_frequency" value=10 />
   
-    <remap from="ranger_0/laserscan" to="base_scan" />
+    <!-- Redirect lidar's parameters -->
+    <param name="global_costmap/obstacle_layer/base_scan/topic" value="$(arg robot)/laser" />
+    <param name="global_costmap/obstacle_layer/base_scan/sensor_frame" value="$(arg robot)/lidar_frame" />
+    <param name="local_costmap/obstacle_layer/base_scan/topic" value="$(arg robot)/laser" />
+    <param name="local_costmap/obstacle_layer/base_scan/sensor_frame" value="$(arg robot)/lidar_frame" />
+
+    <!-- Remap movebase APIs' topic -->
+    <remap from="move_base/cancel" to="$(arg robot)/move_base/cancel" />
+    <remap from="move_base/feedback" to="$(arg robot)/move_base/feedback" />
+    <remap from="move_base/goal" to="$(arg robot)/move_base/goal" />
+    <remap from="move_base/result" to="$(arg robot)/move_base/result" />
+    <remap from="move_base/status" to="$(arg robot)/move_base/status" />
+    <remap from="move_base_simple/goal" to="$(arg robot)/move_base_simple/goal" />
+    <remap from="cmd_vel" to="$(arg robot)/mobile/cmd_vel" />
+    <remap from="odom" to="$(arg robot)/mobile/odom" />
   </node>
 </launch>

@@ -1,7 +1,7 @@
 map_type: voxel
 
-publish_frequency: 10.0
-update_frequency: 10.0
+publish_frequency: 5.0
+update_frequency: 5.0
 always_send_full_costmap: true
 
 static_layer:
@@ -24,9 +24,9 @@ obstacle_layer:
   observation_sources: base_scan
   base_scan: {
     data_type: LaserScan,
-    sensor_frame: base_laser_link,
+    sensor_frame: base_laser_link, # Need changed
     clearing: true,
     marking: true,
-    topic: base_scan
+    topic: base_scan # Need changed
     # topic: ranger_0/laserscan
   }
