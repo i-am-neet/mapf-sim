@@ -24,9 +24,9 @@ obstacle_layer:
   observation_sources: base_scan
   base_scan: {
     data_type: LaserScan,
-    sensor_frame: base_laser_link, # Need changed
+    sensor_frame: base_laser_link,
     clearing: true,
     marking: true,
-    topic: base_scan # Need changed
-    # topic: ranger_0/laserscan
+    topic: base_scan
   }
+  # sensor_frame and topic will be changed

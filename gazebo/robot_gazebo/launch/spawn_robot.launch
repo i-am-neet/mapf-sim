@@ -26,7 +26,7 @@
     <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
       <!-- tf2 doesn't support tf_prefix anymore-->
       <!-- <param name="tf_prefix" value="robot$(arg id)" /> -->
-      <param name="publish_frequency" type="double" value="30.0" />
+      <param name="publish_frequency" type="double" value="10.0" />
     </node>
   </group>
 

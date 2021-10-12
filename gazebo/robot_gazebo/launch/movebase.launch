@@ -18,7 +18,7 @@
     <param name="local_costmap/robot_base_frame" value="$(arg robot)/$(arg base_frame)" />
 
     <!-- Reduce movebase's frequency -->
-    <param name="controller_frequency" value=10 />
+    <param name="controller_frequency" value="10" />
   
     <!-- Redirect lidar's parameters -->
     <param name="global_costmap/obstacle_layer/base_scan/topic" value="$(arg robot)/laser" />
