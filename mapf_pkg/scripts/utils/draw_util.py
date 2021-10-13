@@ -41,3 +41,25 @@ def draw_neighbors_goal(map, map_width, map_height, ngx, ngy, myx, myy, robot_ra
         vy = np.sign(dy)*map_height/2                                # draw on y-axis edge of fov
         vx = vy/m
         return draw_robot(map, map_width, map_height, vx, vy, robot_radius, map_resolution)
+
+def draw_path(map, map_width, map_height, myx, myy, path, map_resolution):
+
+    _map = copy.deepcopy(map)
+
+    for p in path:
+        # get relative pose according to robot's position
+        px = p.pose.position.x / map_resolution
+        py = p.pose.position.y / map_resolution
+
+        dx = px - myx
+        dy = py - myy
+
+        dx = int(dx + map_width/2)
+        dy = int(map_height/2 - dy)
+
+        if dx >= 0 and dx < map_width and dy >= 0 and dy < map_height:     # in the FOV
+            _map[int(dx+map_width*dy)] = 255
+        else: # out of FOV
+            break
+
+    return _map
