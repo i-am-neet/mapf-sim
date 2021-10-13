@@ -1,0 +1,100 @@
+TebLocalPlannerROS:
+
+#  odom_topic: odom
+#  map_frame: /odom
+    
+ # Trajectory
+  
+ teb_autosize: True
+ dt_ref: 0.3
+ dt_hysteresis: 0.1
+ global_plan_overwrite_orientation: True
+ max_global_plan_lookahead_dist: 1.0
+ feasibility_check_no_poses: 5
+    
+ # Robot
+         
+ max_vel_x: 1.0
+ #4.5
+ min_vel_x: 0.1
+ #1.5
+ max_vel_x_backwards: 0.05
+
+ max_vel_y: 1.0
+ #4.4
+ min_vel_y: 0.1
+ #1.5
+ max_vel_y_backwards: 0.05
+ #1
+ max_vel_theta: 0.1
+ min_vel_theta: 0
+ acc_lim_x: 0.1
+ acc_lim_y: 0.1
+ acc_lim_theta: 0.1
+ min_turning_radius: 0.05
+ footprint_model: # types: "point", "circular", "two_circles", "line", "polygon"
+   type: "circular"
+   radius: 0.105 # for type "circular"
+  #  line_start: [-0.3, 0.0] # for type "line"
+  #  line_end: [0.3, 0.0] # for type "line"
+  #  front_offset: 0.2 # for type "two_circles"
+  #  front_radius: 0.2 # for type "two_circles"
+  #  rear_offset: 0.2 # for type "two_circles"
+  #  rear_radius: 0.2 # for type "two_circles"
+  #  vertices: [[0.3745, 0.1715], [0.4395, 0.287], [0.3915, 0.333], [0.27634, 0.271], [-0.3745, 0.271],
+  #             [-0.3745, -0.1715], [-0.4395, -0.287], [-0.3915, -0.333], [-0.27634, -0.271], [0.3745, -0.271]]# for type "polygon"
+
+ # GoalTolerance
+    
+ xy_goal_tolerance: 0.01
+ yaw_goal_tolerance: 0.01
+ free_goal_vel: False # Remove the goal velocity constraint such that the robot can arrive at the goal with maximum speed
+    
+ # Obstacles
+    
+ min_obstacle_dist: 0.03
+ inflation_dist: 0.1
+ include_costmap_obstacles: True
+ costmap_obstacles_behind_robot_dist: 1.0
+ obstacle_poses_affected: 8
+ costmap_converter_plugin: ""
+ costmap_converter_spin_thread: True
+ costmap_converter_rate: 5
+ include_dynamic_obstacles: True
+
+ # Optimization
+
+ no_inner_iterations: 5
+ no_outer_iterations: 4
+ optimization_activate: True
+ optimization_verbose: False
+ penalty_epsilon: 0.1
+ weight_max_vel_x: 2
+ weight_max_vel_y: 2
+ weight_max_vel_theta: 2
+ weight_acc_lim_x: 1
+ weight_acc_lim_y: 1
+ weight_acc_lim_theta: 1
+ weight_kinematics_nh: 0.001 # WE HAVE A HOLONOMIC ROBOT, JUST ADD A SMALL PENALTY
+ weight_kinematics_forward_drive: 500
+ weight_kinematics_turning_radius: 0.0
+ weight_optimaltime: 1
+ weight_obstacle: 15
+ weight_inflation: 0.1
+ weight_dynamic_obstacle: 10 # not in use yet
+ weight_dynamic_obstacle_inflation: 0.1
+ alternative_time_cost: False # not in use yet
+
+ # Homotopy Class Planner
+
+ enable_homotopy_class_planning: True
+ enable_multithreading: True
+ simple_exploration: False
+ max_number_classes: 4
+ roadmap_graph_no_samples: 15
+ roadmap_graph_area_width: 5
+ h_signature_prescaler: 0.5
+ h_signature_threshold: 0.1
+ obstacle_keypoint_offset: 0.1
+ obstacle_heading_threshold: 0.25
+ visualize_hc_graph: False

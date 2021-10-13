@@ -1,0 +1,18 @@
+shutdown_costmaps: false
+
+controller_frequency: 2.0
+controller_patience: 2.0
+
+
+planner_frequency: 3.0
+planner_patience: 5.0
+
+oscillation_timeout: 9.0
+oscillation_distance: 0.1
+
+# local planner - default is trajectory rollout
+# base_local_planner: "dwa_local_planner/DWAPlannerROS"
+base_local_planner: "teb_local_planner/TebLocalPlannerROS"
+# <!--这里配置了local planner为dwa_local_planner -->
+# <!--这里配置了global planner为navfn/NavfnROS -->
+base_global_planner: "navfn/NavfnROS" #alternatives: global_planner/GlobalPlanner, carrot_planner/CarrotPlanner

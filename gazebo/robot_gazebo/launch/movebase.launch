@@ -12,13 +12,16 @@
               command="load" ns="local_costmap" />
     <rosparam file="$(find robot_gazebo)/params/global_costmap_params.yaml" command="load" />
     <rosparam file="$(find robot_gazebo)/params/local_costmap_params.yaml" command="load" />
+
+    <rosparam file="$(find robot_gazebo)/params/move_base_params.yaml" command="load" />
+    <rosparam file="$(find robot_gazebo)/params/global_planner_params.yaml" command="load" />
+    <rosparam file="$(find robot_gazebo)/params/navfn_global_planner_params.yaml" command="load" />
+    <rosparam file="$(find robot_gazebo)/params/teb_local_planner_params.yaml" command="load" />
+
     <param name="global_costmap/global_frame" value="$(arg map_frame)" />
     <param name="global_costmap/robot_base_frame" value="$(arg robot)/$(arg base_frame)" />
     <param name="local_costmap/global_frame" value="$(arg robot)/$(arg odom_frame)" />
     <param name="local_costmap/robot_base_frame" value="$(arg robot)/$(arg base_frame)" />
-
-    <!-- Reduce movebase's frequency -->
-    <param name="controller_frequency" value="10" />
   
     <!-- Redirect lidar's parameters -->
     <param name="global_costmap/obstacle_layer/base_scan/topic" value="$(arg robot)/laser" />
@@ -33,7 +36,7 @@
     <remap from="move_base/result" to="$(arg robot)/move_base/result" />
     <remap from="move_base/status" to="$(arg robot)/move_base/status" />
     <remap from="move_base_simple/goal" to="$(arg robot)/move_base_simple/goal" />
-    <remap from="cmd_vel" to="$(arg robot)/mobile/cmd_vel" />
+    <remap from="cmd_vel" to="$(arg robot)/move_base/cmd_vel" />
     <remap from="odom" to="$(arg robot)/mobile/odom" />
   </node>
 </launch>

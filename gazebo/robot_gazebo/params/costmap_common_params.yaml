@@ -1,8 +1,10 @@
 map_type: voxel
 
-publish_frequency: 5.0
-update_frequency: 5.0
+publish_frequency: 3.0
+update_frequency: 3.0
 always_send_full_costmap: true
+
+robot_radius: 0.105
 
 static_layer:
   enabled: true
@@ -19,6 +21,7 @@ obstacle_layer:
   track_unknown_space: true
   obstacle_range: 1.0
   raytrace_range: 2.0
+  inflation_radius: 0.15
   publish_voxel_map: false
 
   observation_sources: base_scan
@@ -30,3 +33,12 @@ obstacle_layer:
     topic: base_scan
   }
   # sensor_frame and topic will be changed
+
+#cost_scaling_factor and inflation_radius were now moved to the inflation_layer ns
+inflation_layer:
+  enabled:              true
+  cost_scaling_factor:  1.0  # exponential rate at which the obstacle cost drops off (default: 10)
+  inflation_radius:     0.15 #0.525  # max. distance from an obstacle at which costs are incurred for planning paths.
+
+inscribed_radius: 0.105
+circumscribed_radius: 0.105
