@@ -13,17 +13,17 @@ def movebase_client():
     goal = MoveBaseGoal()
     goal.target_pose.header.frame_id = "map"
     goal.target_pose.header.stamp = rospy.Time.now()
-    goal.target_pose.pose.position.x = 2.0
-    goal.target_pose.pose.position.y = 2.0
+    goal.target_pose.pose.position.x = -2.0
+    goal.target_pose.pose.position.y = -2.0
     goal.target_pose.pose.orientation.w = 1.0
 
     client.send_goal(goal)
-    wait = client.wait_for_result()
-    if not wait:
-        rospy.logerr("Action server not available!")
-        rospy.signal_shutdown("Action server not available!")
-    else:
-        return client.get_result()
+    #wait = client.wait_for_result()
+    #if not wait:
+    #    rospy.logerr("Action server not available!")
+    #    rospy.signal_shutdown("Action server not available!")
+    #else:
+    #    return client.get_result()
 
 if __name__ == '__main__':
     try:
