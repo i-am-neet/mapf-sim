@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
+import copy
 import math
 import numpy as np
 import rospy
 import rosnode
 import message_filters
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from std_srvs.srv import Empty as EmptySrv
-from geometry_msgs.msg import Twist
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Twist, Pose, Quaternion
 from std_msgs.msg import Bool
-from gazebo_msgs.msg import ContactsState
+from gazebo_msgs.msg import ContactsState, ModelState
+from gazebo_msgs.srv import SetModelState
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import cv2
 import utils
@@ -20,6 +21,8 @@ import gym
 from gym import spaces
 from gym.utils import seeding
 from signal import signal, SIGINT
+import actionlib
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
 import torch
 from torchvision import transforms
@@ -34,6 +37,7 @@ class StageEnv(gym.Env):
     def __init__(self, current_robot_num,
                        robots_num,
                        robot_radius,
+                       init_poses,
                        goals,
                        map_resolution,
                        resize_observation):
@@ -41,9 +45,13 @@ class StageEnv(gym.Env):
         if len(goals) != robots_num:
             raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
 
+        if len(init_poses) != robots_num:
+            raise ValueError("The amount of init_poses '%d' must equal to robots_num '%d" %(len(init_poses), robots_num))
+
         signal(SIGINT, self.exit_handler)
 
         # Initialize variables of Environment
+        self.init_poses = init_poses
         self.goals = goals
         self.current_robot_num = current_robot_num
         self.robots_num = robots_num
@@ -51,17 +59,13 @@ class StageEnv(gym.Env):
         self.map_resolution = map_resolution
         self.map_height = 0
         self.map_width = 0
-        self._current_robot_x = 0
-        self._current_robot_y = 0
-        self._current_robot_yaw = 0
-        self._current_robot_init_x = 0
-        self._current_robot_init_y = 0
-        self._current_robot_init_yaw = 0
+        self._current_robot_x = init_poses[int(current_robot_num)][0]
+        self._current_robot_y = init_poses[int(current_robot_num)][1]
+        self._current_robot_yaw = init_poses[int(current_robot_num)][2]
         self._current_robot_done = False
-        self._first_time = True
-        self._current_goal_x = 0
-        self._current_goal_y = 0
-        self._current_goal_yaw = 0
+        self._current_goal_x = goals[int(current_robot_num)][0]    # Agent's goal x
+        self._current_goal_y = goals[int(current_robot_num)][1]    # Agent's goal y
+        self._current_goal_yaw = goals[int(current_robot_num)][2]  # Agent's goal yaw
         self.robots_position = list()
         self._collision = False
         self._max_episode_steps = 200
@@ -70,9 +74,11 @@ class StageEnv(gym.Env):
         # Initialize tensors of Observations
         self.local_map = torch.zeros(1)
         self.agents_map = torch.zeros(1)
-        self.my_goal_map = torch.zeros(1)
+        # self.my_goal_map = torch.zeros(1)
+        self.planner_map = torch.zeros(1)
         self.neighbors_goal_map = torch.zeros(1)
-        self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map)).numpy()
+        # self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map)).numpy()
+        self.observation = torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map)).numpy()
 
         self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.map_height, self.map_width), dtype=np.uint8)
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
@@ -91,6 +97,9 @@ class StageEnv(gym.Env):
         _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
         print("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
         _subscribers.append(_sub_obs)
+        _sub_obs = message_filters.Subscriber("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)), Path)
+        print("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)))
+        _subscribers.append(_sub_obs)
         for i in range(0, self.robots_num):
             _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
             print("/robot{}/mobile/odom".format(str(i)))
@@ -101,6 +110,9 @@ class StageEnv(gym.Env):
         ts.registerCallback(self.__callback)
 
         _sub_collision = rospy.Subscriber("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState, self.__collision_callback)
+
+        # Action
+        self.__movebase_client(self.current_robot_num, self._current_goal_x, self._current_goal_y, self._current_goal_yaw)
 
         # Flags
         self._sync_obs_ready = False
@@ -132,18 +144,22 @@ class StageEnv(gym.Env):
                     MAPF_ALIVE_NODES.append(n)
         time.sleep(1)
 
+        # Save costmap
+        self.global_costmap = self.__get_global_costmap(self.current_robot_num)
+
         # rospy.spin()
 
     def __callback(self, *data):
         """
         callback value:
             data[0]: local_costmap
-            data[1]: robot1's odom
-            data[2]: robot2's odom
+            data[1]: path
+            data[2]: robot1's odom
+            data[3]: robot2's odom
             ...
 
         Observations are created by this function
-        (local_map, agents_map, my_goal_map, neighbors_goal_map)
+        (local_map, agents_map, planner_map, neighbors_goal_map)
 
         """
         # local costmap: tuple -> np.array -> tensor
@@ -154,7 +170,9 @@ class StageEnv(gym.Env):
         # print("2. {}".format(torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1)).shape))
         self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
-        data = data[1:] # Remove local_costmap, for counting robot's number easily
+        planner_path = data[1].poses
+
+        data = data[2:] # Remove local_costmap, for counting robot's number easily
 
         # Current robot's info
         self._current_robot_x = data[int(self.current_robot_num)].pose.pose.position.x
@@ -163,21 +181,6 @@ class StageEnv(gym.Env):
                                                         data[int(self.current_robot_num)].pose.pose.orientation.y,
                                                         data[int(self.current_robot_num)].pose.pose.orientation.z,
                                                         data[int(self.current_robot_num)].pose.pose.orientation.w])[2]
-
-        if self._first_time:
-            # Save initial position
-            self._current_robot_init_x = self._current_robot_x
-            self._current_robot_init_y =  self._current_robot_y
-            self._current_robot_init_yaw =  self._current_robot_yaw
-            self._current_goal_x = self.goals[int(self.current_robot_num)][0]    # Agent's goal x
-            self._current_goal_y = self.goals[int(self.current_robot_num)][1]    # Agent's goal y
-            self._current_goal_yaw = self.goals[int(self.current_robot_num)][2]  # Agent's goal yaw
-
-            print("I am robot {}, from ({}, {}, {}) to ({}, {}, {})"\
-                   .format(self.current_robot_num,\
-                           self._current_robot_init_x, self._current_robot_init_y, self._current_robot_init_yaw,\
-                           self._current_goal_x, self._current_goal_y, self._current_goal_yaw))
-            self._first_time = False
 
         # Scale unit for pixel with map's resolution (meter -> pixels)
         my_x = self._current_robot_x / self.map_resolution
@@ -189,11 +192,13 @@ class StageEnv(gym.Env):
         agyaw = self._current_goal_yaw
 
         # Initialize size equal to local costmap
-        self.my_goal_map = torch.zeros(self.local_map.size())
+        # self.my_goal_map = torch.zeros(self.local_map.size())
+        self.planner_map = torch.zeros(self.local_map.size())
         self.agents_map = torch.zeros(self.local_map.size())
         self.neighbors_goal_map = torch.zeros(self.local_map.size())
 
-        self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
+        # self.my_goal_map = utils.draw_goal(self.my_goal_map, self.map_width, self.map_height, agx - my_x, agy - my_y, self.robot_radius, self.map_resolution)
+        self.planner_map = utils.draw_path(self.planner_map, self.map_width, self.map_height, my_x, my_y, planner_path, self.map_resolution)
 
         self.robots_position = list()
 
@@ -218,15 +223,15 @@ class StageEnv(gym.Env):
                     _ngyaw = self.goals[i][2]                         # Neighbor's goal yaw
                     self.neighbors_goal_map = utils.draw_neighbors_goal(self.neighbors_goal_map, self.map_width, self.map_height, _ngx, _ngy, my_x, my_y, self.robot_radius, self.map_resolution)
 
-        # print("check size {} {} {} {}".format(self.local_map.size(), self.my_goal_map.size(), self.agents_map.size(), self.neighbors_goal_map.size()))
-        # print("check shape {} {} {} {}".format(self.local_map.shape, self.my_goal_map.shape, self.agents_map.shape, self.neighbors_goal_map.shape))
         # Reshape map tensor to 2-dims
         self.local_map = self.local_map.reshape(self.map_height, self.map_width)
-        self.agents_map = self.local_map.reshape(self.map_height, self.map_width)
-        self.my_goal_map = self.local_map.reshape(self.map_height, self.map_width)
-        self.neighbors_goal_map = self.local_map.reshape(self.map_height, self.map_width)
+        self.agents_map = self.agents_map.reshape(self.map_height, self.map_width)
+        # self.my_goal_map = self.my_goal_map.reshape(self.map_height, self.map_width)
+        self.planner_map = self.planner_map.reshape(self.map_height, self.map_width)
+        self.neighbors_goal_map = self.neighbors_goal_map.reshape(self.map_height, self.map_width)
         # Observation is stack all map tensor, then convert to np.array
-        o = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
+        # o = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
+        o = torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map))
         # Resize map (resize operation on tensor)
         transform =  transforms.Resize(self.resize_observation)
         self.observation = transform(o).numpy()
@@ -277,7 +282,7 @@ class StageEnv(gym.Env):
 
             if any('ground_plane' in a.lower() for a in A):
                 # Ignore collision with ground_plane
-                break
+                continue
             elif any('wall' in a.lower() for a in A):
                 # print("{} Hit the wall!!!!!".format(c))
                 self._collision = True
@@ -296,22 +301,23 @@ class StageEnv(gym.Env):
 
     def render(self):
         """
-        Show the observation that contains local_map, agents_map, my_goal_map, and neighbors_goal_map
+        Show the observation that contains local_map, agents_map, planner_map, and neighbors_goal_map
         """
 
         # _im_local_map = utils.tensor_to_cv(self.local_map, self.map_height, self.map_width)
         # _im_agents_map = utils.tensor_to_cv(self.agents_map, self.map_height, self.map_width)
-        # _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.map_height, self.map_width)
+        # # _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.map_height, self.map_width)
+        # _im_planner_map = utils.tensor_to_cv(self.planner_map, self.map_height, self.map_width)
         # _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.map_height, self.map_width)
-        _im_local_map = utils.tensor_to_cv(self.local_map, self.resize_observation, self.resize_observation)
-        _im_agents_map = utils.tensor_to_cv(self.agents_map, self.resize_observation, self.resize_observation)
-        _im_my_goal_map = utils.tensor_to_cv(self.my_goal_map, self.resize_observation, self.resize_observation)
-        _im_neighbors_goal_map = utils.tensor_to_cv(self.neighbors_goal_map, self.resize_observation, self.resize_observation)
 
-        _im_tile = utils.concat_tile_resize([[_im_local_map, _im_agents_map],
-                                             [_im_my_goal_map, _im_neighbors_goal_map]],
+        # _im_tile = utils.concat_tile_resize([[_im_local_map, _im_agents_map],
+        #                                      [_im_planner_map, _im_neighbors_goal_map]],
+        #                                      text=[["local_map", "agents_map"],
+        #                                            ["planner_map", "neighbors_goal_map"]])
+        _im_tile = utils.concat_tile_resize([[self.observation[0].astype('uint8'), self.observation[1].astype('uint8')],
+                                             [self.observation[2].astype('uint8'), self.observation[3].astype('uint8')]],
                                              text=[["local_map", "agents_map"],
-                                                   ["my_goal_map", "neighbors_goal_map"]])
+                                                   ["planner_map", "neighbors_goal_map"]])
         cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
         cv2.waitKey(1)
 
@@ -323,11 +329,27 @@ class StageEnv(gym.Env):
         Output: observation
         """
 
+        for i in range(0, len(self.init_poses)):
+            self.__reset_model_pose("robot{}".format(i), self.init_poses[i][0], self.init_poses[i][1], self.init_poses[i][2])
+            self.__reset_model_pose("goal{}".format(i), self.goals[i][0], self.goals[i][1], self.goals[i][2])
+        time.sleep(1)
+        print("I am robot {}, from ({}, {}, {}) to ({}, {}, {})"\
+                .format(self.current_robot_num,\
+                        self._current_robot_x, self._current_robot_y, self._current_robot_yaw,\
+                        self._current_goal_x, self._current_goal_y, self._current_goal_yaw))
+
+        self.__movebase_client(self.current_robot_num, self._current_goal_x, self._current_goal_y, self._current_goal_yaw)
+        time.sleep(1)
+
         self._current_robot_done = False
         self._done_robots = tuple()
         self._sync_obs_ready = False
 
-        self.__reset_all_robots()
+        self.init_poses = self.__get_new_poses(self.global_costmap, self.init_poses)
+        self.goals = self.__get_new_poses(self.global_costmap, self.goals)
+        self._current_goal_x = self.goals[int(self.current_robot_num)][0]    # Agent's goal x
+        self._current_goal_y = self.goals[int(self.current_robot_num)][1]    # Agent's goal y
+        self._current_goal_yaw = self.goals[int(self.current_robot_num)][2]  # Agent's goal yaw
 
         return self.observation
 
@@ -344,7 +366,7 @@ class StageEnv(gym.Env):
         self.__action_to_vel(u)
 
         # moving cost
-        r = -1
+        r = -0.3
 
         # ARRIVED GOAL
         for i, e in enumerate(self.robots_position):
@@ -358,7 +380,7 @@ class StageEnv(gym.Env):
         ## The robot which is in collision will get punishment
         if self._collision:
             self._current_robot_done = True
-            r = -10
+            r = -2.0
             info = {"I got collision..."}
 
         self._pub_done.publish(self._current_robot_done)
@@ -398,11 +420,10 @@ class StageEnv(gym.Env):
 
         self._pub_vel.publish(msg)
 
-    def __reset_all_robots(self):
+    def __reset_gazebo_world(self):
         """
-        Reset all robots' position
+        Reset gazebo world by call service
         """
-
         try:
             reset_env = rospy.ServiceProxy('/gazebo/reset_world', EmptySrv)
             reset_env()
@@ -422,3 +443,79 @@ class StageEnv(gym.Env):
         self.stop_robot()
         print('SIGINT or CTRL-C detected. Exiting gracefully')
         exit(0)
+
+    def __reset_model_pose(self, model_name, x, y, yaw):
+        """
+        Reset robot's position
+        """
+
+        q = quaternion_from_euler(0.0, 0.0, yaw)
+        ms = ModelState()
+        ms.model_name = model_name
+        ms.pose.position.x = x
+        ms.pose.position.y = y
+        ms.pose.orientation = Quaternion(*q)
+
+        try:
+            reset_pose = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+            reset_pose(ms)
+        except rospy.ServiceException as e:
+            print("Service call failed: {}".format(e))
+
+    def __movebase_client(self, id, gx, gy, gyaw):
+        """
+        Call movebase to get path by actionlib
+        """
+
+        q = quaternion_from_euler(0.0, 0.0, gyaw)
+
+        client = actionlib.SimpleActionClient('robot{}/move_base'.format(id),MoveBaseAction)
+        client.wait_for_server()
+
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.stamp = rospy.Time.now()
+        goal.target_pose.pose.position.x = gx
+        goal.target_pose.pose.position.y = gy
+        goal.target_pose.pose.orientation = Quaternion(*q)
+
+        client.send_goal(goal)
+
+    def __get_global_costmap(self, id=0):
+        """
+        Get global costmap with inflation
+        """
+
+        msg = rospy.wait_for_message('/robot{}_move_base/global_costmap/costmap'.format(id), OccupancyGrid)
+        map = np.reshape(msg.data, (msg.info.width, msg.info.height)).astype('uint8')
+        # cv2.imshow("Global costmap of Agent {}".format(id), map)
+        # cv2.waitKey(1)
+        return map
+
+    def __get_new_poses(self, map, poses):
+        """
+        Determine poses of robots and goals for next episode
+        Return poses that locate at available position in costmap
+        """
+        _map = copy.deepcopy(map)
+        new_poses = []
+        for i in range(0, len(poses)):
+            while True:
+                _x = int(np.random.rand()*len(_map[0]))
+                _y = int(np.random.rand()*len(_map))
+                _yaw = np.random.rand()*math.pi
+                if _map[_x][_y] == 0: # available
+                    __x = _x - len(_map[0])/2
+                    __y = (_y - len(_map)/2)*-1
+                    new_poses.append((__x*self.map_resolution, __y*self.map_resolution, _yaw))
+                    # occupy it
+                    x_start = int(_x-self.robot_radius) if int(_x-self.robot_radius)>=0 else 0
+                    x_end = int(_x+self.robot_radius) if int(_x+self.robot_radius)<self.map_width else self.map_width
+                    y_start = int(_y-self.robot_radius) if int(_y-self.robot_radius)>0 else 0
+                    y_end = int(_y+self.robot_radius) if int(_y+self.robot_radius)<self.map_height else self.map_height
+                    for ix in range(x_start, x_end):
+                        for iy in range(y_start, y_end):
+                            _map[ix][iy] = 255
+                    break
+        return new_poses
+
