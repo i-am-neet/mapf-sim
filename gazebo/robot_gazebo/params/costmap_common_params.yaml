@@ -1,7 +1,7 @@
 map_type: voxel
 
-publish_frequency: 3.0
-update_frequency: 3.0
+publish_frequency: 30.0
+update_frequency: 30.0
 always_send_full_costmap: true
 
 robot_radius: 0.105

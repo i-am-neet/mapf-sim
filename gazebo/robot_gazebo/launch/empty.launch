@@ -2,7 +2,7 @@
   <arg name="gui" default="true" />
   <arg name="verbose" default="true" />
   <arg name="world_file" default="$(find robot_gazebo)/worlds/empty.world" />
-  <arg name="map_file"       default=" $(find robot_gazebo)/maps/empty.yaml"/>
+  <arg name="map_file"       default=" $(find robot_gazebo)/maps/resolution=005/empty.yaml"/>
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(arg world_file)"/>

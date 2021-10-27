@@ -1,5 +1,7 @@
 TebLocalPlannerROS:
 
+# You can refer Teb's config files from https://github.com/rst-tu-dortmund/teb_local_planner_tutorials/blob/melodic-devel/cfg/omnidir/teb_local_planner_params.yaml
+
 #  odom_topic: odom
 #  map_frame: /odom
     
@@ -14,23 +16,23 @@ TebLocalPlannerROS:
     
  # Robot
          
- max_vel_x: 1.0
+ max_vel_x: 1.5
  #4.5
- min_vel_x: 0.1
+ min_vel_x: 0.5
  #1.5
- max_vel_x_backwards: 0.05
+ max_vel_x_backwards: 0.5
 
- max_vel_y: 1.0
+ max_vel_y: 1.5
  #4.4
- min_vel_y: 0.1
+ min_vel_y: 0.5
  #1.5
- max_vel_y_backwards: 0.05
+ max_vel_y_backwards: 0.5
  #1
- max_vel_theta: 0.1
- min_vel_theta: 0
- acc_lim_x: 0.1
- acc_lim_y: 0.1
- acc_lim_theta: 0.1
+ max_vel_theta: 1.1
+ min_vel_theta: 0.5
+ acc_lim_x: 1.0
+ acc_lim_y: 1.0
+ acc_lim_theta: 1.0
  min_turning_radius: 0.05
  footprint_model: # types: "point", "circular", "two_circles", "line", "polygon"
    type: "circular"
@@ -69,21 +71,22 @@ TebLocalPlannerROS:
  optimization_activate: True
  optimization_verbose: False
  penalty_epsilon: 0.1
- weight_max_vel_x: 2
- weight_max_vel_y: 2
- weight_max_vel_theta: 2
+ weight_max_vel_x: 5
+ weight_max_vel_y: 5
+ weight_max_vel_theta: 5
  weight_acc_lim_x: 1
  weight_acc_lim_y: 1
  weight_acc_lim_theta: 1
- weight_kinematics_nh: 0.001 # WE HAVE A HOLONOMIC ROBOT, JUST ADD A SMALL PENALTY
- weight_kinematics_forward_drive: 500
- weight_kinematics_turning_radius: 0.0
+ weight_kinematics_nh: 1 # WE HAVE A HOLONOMIC ROBOT, JUST ADD A SMALL PENALTY
+ weight_kinematics_forward_drive: 1
+ weight_kinematics_turning_radius: 1
  weight_optimaltime: 1
  weight_obstacle: 15
  weight_inflation: 0.1
  weight_dynamic_obstacle: 10 # not in use yet
  weight_dynamic_obstacle_inflation: 0.1
  alternative_time_cost: False # not in use yet
+ oscillation_recovery: False
 
  # Homotopy Class Planner
 

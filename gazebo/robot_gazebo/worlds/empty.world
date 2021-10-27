@@ -2,7 +2,7 @@
 
 <sdf version="1.5">
 
-  <world name="home-area">
+  <world name="empty">
 
     <scene>
       <ambient>0.6 0.6 0.6 1</ambient>
@@ -29,6 +29,13 @@
     <include>
       <uri>model://ground_plane</uri>
     </include>
+
+    <model name="empty">
+      <include>
+        <uri>model://empty</uri>
+        <pose>0 0 0 0 0 0</pose>
+      </include>
+    </model>
 
   </world>
 
