@@ -7,8 +7,9 @@ from model import GaussianPolicy, QNetwork, ValueNetwork
 
 
 class SAC(object):
-    def __init__(self, input_shape, action_space, args):
+    def __init__(self, input_space, action_space, args):
 
+        self.use_expert = args.use_expert
         self.gamma = args.gamma
         self.tau = args.tau
         self.alpha = args.alpha
@@ -19,20 +20,30 @@ class SAC(object):
 
         # self.device = torch.device("cuda" if args.cuda else "cpu")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # print(torch.cuda.is_available())
+        # print(torch.cuda.current_device())
+        # print(torch.cuda.device(0))
+        # print(torch.cuda.device_count())
+        # print(torch.cuda.get_device_name())
+        # print(torch.backends.cudnn.version())
+        # print(torch.backends.cudnn.is_available())
 
-        self.critic = QNetwork(input_shape, action_space.shape[0]).to(device=self.device)
+        self.critic = QNetwork(input_space, action_space.shape[0]).to(device=self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
 
-        self.value = ValueNetwork(input_shape).to(device=self.device)
-        self.value_target = ValueNetwork(input_shape).to(self.device)
+        self.value = ValueNetwork(input_space).to(device=self.device)
+        self.value_target = ValueNetwork(input_space).to(self.device)
         self.value_optim = Adam(self.value.parameters(), lr=args.lr)
         hard_update(self.value_target, self.value)
 
-        self.policy = GaussianPolicy(input_shape, action_space.shape[0], args.hidden_size).to(self.device)
+        self.policy = GaussianPolicy(input_space, action_space.shape[0], args.hidden_size).to(self.device)
         self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
     def select_action(self, state, eval=False):
-        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+        state_map = torch.FloatTensor(state['map']).to(self.device).unsqueeze(0)
+        state_lidar = torch.FloatTensor(state['lidar']).to(self.device).unsqueeze(0)
+        state_goal = torch.FloatTensor(state['goal']).to(self.device).unsqueeze(0)
+        state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal}
         if eval is False:
             action, _, _, _ = self.policy.sample(state)
         else:
@@ -47,19 +58,51 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates):
         # Sample a batch from memory
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        if not self.use_expert:
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch, s_e_batch, a_e_batch = memory.sample(batch_size=batch_size, use_expert=True)
 
-        state_batch = torch.FloatTensor(state_batch).to(self.device)
-        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+        # State is array of dictionary like [{"map":value, "lidar":value, "goal":value}, ...]
+        _new_state_batch = {'map':[], 'lidar':[], 'goal':[]}
+        _new_next_state_batch = {'map':[], 'lidar':[], 'goal':[]}
+        _new_s_e_batch = {'map':[], 'lidar':[], 'goal':[]}
+        for s in state_batch:
+            _new_state_batch['map'].append(s['map'])
+            _new_state_batch['lidar'].append(s['lidar'])
+            _new_state_batch['goal'].append(s['goal'])
+
+        for s in next_state_batch:
+            _new_next_state_batch['map'].append(s['map'])
+            _new_next_state_batch['lidar'].append(s['lidar'])
+            _new_next_state_batch['goal'].append(s['goal'])
+
+        if self.use_expert:
+            for s in s_e_batch:
+                _new_s_e_batch['map'].append(s['map'])
+                _new_s_e_batch['lidar'].append(s['lidar'])
+                _new_s_e_batch['goal'].append(s['goal'])
+
+        _new_state_batch['map'] = torch.FloatTensor(_new_state_batch['map']).to(self.device)
+        _new_state_batch['lidar'] = torch.FloatTensor(_new_state_batch['lidar']).to(self.device)
+        _new_state_batch['goal'] = torch.FloatTensor(_new_state_batch['goal']).to(self.device)
+        _new_next_state_batch['map'] = torch.FloatTensor(_new_next_state_batch['map']).to(self.device)
+        _new_next_state_batch['lidar'] = torch.FloatTensor(_new_next_state_batch['lidar']).to(self.device)
+        _new_next_state_batch['goal'] = torch.FloatTensor(_new_next_state_batch['goal']).to(self.device)
+        if self.use_expert:
+            _new_s_e_batch['map'] = torch.FloatTensor(_new_s_e_batch['map']).to(self.device)
+            _new_s_e_batch['lidar'] = torch.FloatTensor(_new_s_e_batch['lidar']).to(self.device)
+            _new_s_e_batch['goal'] = torch.FloatTensor(_new_s_e_batch['goal']).to(self.device)
+            a_e_batch = torch.FloatTensor(a_e_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
         mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
 
         with torch.no_grad():
-            vf_next_target = self.value_target(next_state_batch)
+            vf_next_target = self.value_target(_new_next_state_batch)
             next_q_value = reward_batch + mask_batch * self.gamma * (vf_next_target)
 
-        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
+        qf1, qf2 = self.critic(_new_state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
         qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf_loss = qf1_loss + qf2_loss
@@ -68,10 +111,17 @@ class SAC(object):
         qf_loss.backward()
         self.critic_optim.step()
 
-        pi, log_pi, mean, log_std = self.policy.sample(state_batch)
+        # Update Policy
+        if not self.use_expert:
+            pi, log_pi, mean, log_std = self.policy.sample(_new_state_batch)
 
-        qf1_pi, qf2_pi = self.critic(state_batch, pi)
-        min_qf_pi = torch.min(qf1_pi, qf2_pi)
+            qf1_pi, qf2_pi = self.critic(_new_state_batch, pi)
+            min_qf_pi = torch.min(qf1_pi, qf2_pi)
+        else:
+            pi, log_pi, mean, log_std = self.policy.sample(_new_s_e_batch)
+
+            qf1_pi, qf2_pi = self.critic(_new_s_e_batch, pi)
+            min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
         policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         # Regularization Loss
@@ -82,7 +132,11 @@ class SAC(object):
         policy_loss.backward()
         self.policy_optim.step()
 
-        vf = self.value(state_batch)
+        # Update Value
+        if not self.use_expert:
+            vf = self.value(_new_state_batch)
+        else:
+            vf = self.value(_new_s_e_batch)
         
         with torch.no_grad():
             vf_target = min_qf_pi - (self.alpha * log_pi)
@@ -99,7 +153,8 @@ class SAC(object):
         return vf_loss.item(), qf1_loss.item(), qf2_loss.item(), policy_loss.item()
 
     # Save model parameters
-    def save_model(self, env_name, suffix="", actor_path=None, critic_path=None, value_path=None):
+    def save_model(self, env_name, suffix="", actor_path=None, critic_path=None, value_path=None,
+                                              actor_optim_path=None, critic_optim_path=None, value_optim_path=None):
         if not os.path.exists('models/'):
             os.makedirs('models/')
 
@@ -108,18 +163,37 @@ class SAC(object):
         if critic_path is None:
             critic_path = "models/sac_critic_{}_{}".format(env_name, suffix)
         if value_path is None:
-            critic_path = "models/sac_value_{}_{}".format(env_name, suffix)
-        print('Saving models to {}, {} and {}'.format(actor_path, critic_path, value_path))
+            value_path = "models/sac_value_{}_{}".format(env_name, suffix)
+        if actor_optim_path is None:
+            actor_optim_path = "models/sac_actor_optim_{}_{}".format(env_name, suffix)
+        if critic_optim_path is None:
+            critic_optim_path = "models/sac_critic_optim_{}_{}".format(env_name, suffix)
+        if value_optim_path is None:
+            value_optim_path = "models/sac_value_optim_{}_{}".format(env_name, suffix)
+        print('Saving models to\n {}\n, {}\n, {}\n, {}\n, {}\n and {}'.format(actor_path, critic_path, value_path,
+                                                                              actor_optim_path, critic_optim_path, value_optim_path))
+
         torch.save(self.policy.state_dict(), actor_path)
         torch.save(self.critic.state_dict(), critic_path)
         torch.save(self.value.state_dict(), value_path)
+        torch.save(self.policy_optim.state_dict(), actor_optim_path)
+        torch.save(self.critic_optim.state_dict(), critic_optim_path)
+        torch.save(self.value_optim.state_dict(), value_optim_path)
 
     # Load model parameters
-    def load_model(self, actor_path, critic_path, value_path):
-        print('Loading models from {}, {} and {}'.format(actor_path, critic_path, value_path))
+    def load_model(self, actor_path, critic_path, value_path,
+                         actor_optim_path, critic_optim_path, value_optim_path):
+        print('Loading models from\n {}\n, {}\n, {}\n, {}\n, {}\n and {}'.format(actor_path, critic_path, value_path,
+                                                                                 actor_optim_path, critic_optim_path, value_optim_path))
         if actor_path is not None:
             self.policy.load_state_dict(torch.load(actor_path))
         if critic_path is not None:
             self.critic.load_state_dict(torch.load(critic_path))
         if value_path is not None:
             self.value.load_state_dict(torch.load(value_path))
+        if actor_optim_path is not None:
+            self.policy_optim.load_state_dict(torch.load(actor_optim_path))
+        if critic_optim_path is not None:
+            self.critic_optim.load_state_dict(torch.load(critic_optim_path))
+        if value_optim_path is not None:
+            self.value_optim.load_state_dict(torch.load(value_optim_path))

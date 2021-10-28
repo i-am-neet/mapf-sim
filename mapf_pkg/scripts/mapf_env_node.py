@@ -5,6 +5,7 @@ import numpy as np
 import rospy
 import rosnode
 import message_filters
+from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from std_srvs.srv import Empty as EmptySrv
 from geometry_msgs.msg import Twist, Pose, Quaternion
@@ -23,6 +24,7 @@ from gym.utils import seeding
 from signal import signal, SIGINT
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from actionlib_msgs.msg import GoalStatusArray
 
 import torch
 from torchvision import transforms
@@ -30,7 +32,7 @@ from torchvision import transforms
 ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
 ARRIVED_RANGE_YAW = math.radians(5) # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
 
-MAX_SPEED = abs(1.0) # maximum speed (m/s)
+MAX_SPEED = abs(0.5) # maximum speed (m/s)
 
 class StageEnv(gym.Env):
 
@@ -40,7 +42,7 @@ class StageEnv(gym.Env):
                        init_poses,
                        goals,
                        map_resolution,
-                       resize_observation):
+                       resize_observation=0):
 
         if len(goals) != robots_num:
             raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
@@ -67,9 +69,13 @@ class StageEnv(gym.Env):
         self._current_goal_y = goals[int(current_robot_num)][1]    # Agent's goal y
         self._current_goal_yaw = goals[int(current_robot_num)][2]  # Agent's goal yaw
         self.robots_position = list()
-        self._collision = False
-        self._max_episode_steps = 200
+        # self._collision = False
+        self._max_episode_steps = 500
         self.resize_observation = resize_observation
+        self.lidar_range_size = 0
+        self._first_planner = False
+        self._planner_benchmark = None
+        self._planner_length = None
 
         # Initialize tensors of Observations
         self.local_map = torch.zeros(1)
@@ -78,9 +84,16 @@ class StageEnv(gym.Env):
         self.planner_map = torch.zeros(1)
         self.neighbors_goal_map = torch.zeros(1)
         # self.observation = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map)).numpy()
-        self.observation = torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map)).numpy()
+        self.observation = {
+                            'map':torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map)).numpy(),
+                            'lidar':[[]],
+                            'goal':[[]]
+        }
 
-        self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.map_height, self.map_width), dtype=np.uint8)
+        # self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.map_height, self.map_width), dtype=np.uint8)
+        self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=255, shape=(4, self.map_height, self.map_width), dtype=np.uint8),
+                                             lidar=spaces.Box(low=0, high=255, shape=(1, self.lidar_range_size), dtype=np.uint8),
+                                             goal=spaces.Box(low=-math.inf, high=math.inf, shape=(1, 3)))
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
         self._done_robots = tuple()
@@ -92,30 +105,36 @@ class StageEnv(gym.Env):
         self._pub_done = rospy.Publisher('/robot{}/done'.format(self.current_robot_num), Bool, queue_size=1)
 
         # Subscriber
-        # Register all topics for message_filters
-        _subscribers = []
-        _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
-        print("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
-        _subscribers.append(_sub_obs)
-        _sub_obs = message_filters.Subscriber("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)), Path)
-        print("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)))
-        _subscribers.append(_sub_obs)
-        for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
-            print("/robot{}/mobile/odom".format(str(i)))
-            _subscribers.append(_sub_obs)
+        # # Register all topics for message_filters
+        # _subscribers = []
+        # # local costmap
+        # _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
+        # print("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)))
+        # _subscribers.append(_sub_obs)
+        # # global planner
+        # _sub_obs = message_filters.Subscriber("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)), Path)
+        # print("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)))
+        # _subscribers.append(_sub_obs)
+        # # lidar
+        # _sub_obs = message_filters.Subscriber("/robot{}/laser".format(str(self.current_robot_num)), LaserScan)
+        # print("/robot{}/laser".format(str(self.current_robot_num)))
+        # _subscribers.append(_sub_obs)
+        # for i in range(0, self.robots_num):
+        #     _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
+        #     print("/robot{}/mobile/odom".format(str(i)))
+        #     _subscribers.append(_sub_obs)
 
         # ts = message_filters.TimeSynchronizer(_subscribers, 10)
-        ts = message_filters.ApproximateTimeSynchronizer(_subscribers, 10, 0.1, allow_headerless=True)
-        ts.registerCallback(self.__callback)
+        # ts = message_filters.ApproximateTimeSynchronizer(_subscribers, 10, 0.1, allow_headerless=True)
+        # ts.registerCallback(self.__callback)
 
-        _sub_collision = rospy.Subscriber("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState, self.__collision_callback)
+        # _sub_collision = rospy.Subscriber("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState, self.__collision_callback)
 
         # Action
         self.__movebase_client(self.current_robot_num, self._current_goal_x, self._current_goal_y, self._current_goal_yaw)
 
         # Flags
-        self._sync_obs_ready = False
+        # self._sync_obs_ready = False
 
         _subscribers_done = []
         for i in range(0, self.robots_num):
@@ -126,9 +145,9 @@ class StageEnv(gym.Env):
         ts_done = message_filters.ApproximateTimeSynchronizer(_subscribers_done, 10, 0.1, allow_headerless=True)
         ts_done.registerCallback(self.__callback_done)
 
-        while self.map_height == 0:
-            print("waiting ROS message_filters...")
-            time.sleep(1)
+        # while self.map_height == 0:
+        #     print("waiting ROS message_filters...")
+        #     time.sleep(1)
 
         # Waiting until all mapf_env_node started
         rosnode.rosnode_cleanup()
@@ -149,17 +168,20 @@ class StageEnv(gym.Env):
 
         # rospy.spin()
 
-    def __callback(self, *data):
+    # def __callback(self, *data):
+    def __callback(self, data):
         """
         callback value:
             data[0]: local_costmap
             data[1]: path
-            data[2]: robot1's odom
-            data[3]: robot2's odom
+            data[2]: lidar's raw data
+            data[3]: robot1's odom
+            data[4]: robot2's odom
             ...
 
         Observations are created by this function
         (local_map, agents_map, planner_map, neighbors_goal_map)
+        [[lidar's raw data]]
 
         """
         # local costmap: tuple -> np.array -> tensor
@@ -168,11 +190,27 @@ class StageEnv(gym.Env):
         # print("0. {}".format(torch.from_numpy(np.asarray(data[0].data)).shape))
         # print("1. {}".format(torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)).shape))
         # print("2. {}".format(torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1)).shape))
-        self.local_map = torch.from_numpy(np.asarray(data[0].data).reshape(self.map_height, self.map_width)[::-1].reshape(-1))
+        _l_m = np.asarray(data[0].data)
+        _l_m[_l_m < 10] = 0
+        _l_m[_l_m >= 10] = 255
+        self.local_map = torch.from_numpy(_l_m.reshape(self.map_height, self.map_width)[::-1].reshape(-1))
 
         planner_path = data[1].poses
 
-        data = data[2:] # Remove local_costmap, for counting robot's number easily
+        # Rewards of planner path's benchmark
+        if self._first_planner:
+            if len(planner_path) == 0:
+                self.reset()
+            else:
+                self._planner_benchmark = len(planner_path)
+            self._first_planner = False
+
+        self._planner_length = len(planner_path)
+
+        lidar_data = data[2].ranges
+        self.lidar_range_size = len(lidar_data)
+
+        data = data[3:] # Remove local_costmap, for counting robot's number easily
 
         # Current robot's info
         self._current_robot_x = data[int(self.current_robot_num)].pose.pose.position.x
@@ -233,11 +271,26 @@ class StageEnv(gym.Env):
         # o = torch.stack((self.local_map, self.agents_map, self.my_goal_map, self.neighbors_goal_map))
         o = torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map))
         # Resize map (resize operation on tensor)
-        transform =  transforms.Resize(self.resize_observation)
-        self.observation = transform(o).numpy()
-        self.observation_space = spaces.Box(low=0, high=255, shape=(4, self.resize_observation, self.resize_observation), dtype=np.uint8)
+        if self.resize_observation != 0:
+            transform =  transforms.Resize(self.resize_observation)
+            self.observation['map'] = transform(o).numpy()
+        else:
+            self.observation['map'] = o.numpy()
 
-        self._sync_obs_ready = True
+        self.observation['lidar'] = [lidar_data]
+        self.observation['goal'] = [[self._current_goal_x - self._current_robot_x,
+                                    self._current_goal_y - self._current_robot_y,
+                                    self._current_goal_yaw - self._current_robot_yaw]]
+        if self.resize_observation != 0:
+            self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=255, shape=(4, self.resize_observation, self.resize_observation), dtype=np.uint8),
+                                                lidar=spaces.Box(low=0, high=math.inf, shape=(1, self.lidar_range_size), dtype=np.float32),
+                                                goal=spaces.Box(low=-math.inf, high=math.inf, shape=(1, 3), dtype=np.float32))
+        else:
+            self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=255, shape=(4, 40, 40), dtype=np.uint8),
+                                                lidar=spaces.Box(low=0, high=math.inf, shape=(1, self.lidar_range_size), dtype=np.float32),
+                                                goal=spaces.Box(low=-math.inf, high=math.inf, shape=(1, 3), dtype=np.float32))
+
+        # self._sync_obs_ready = True
 
     def __callback_done(self, *data):
         """
@@ -269,12 +322,14 @@ class StageEnv(gym.Env):
     def i_am_done(self, done):
         self._current_robot_done = done
 
-    def __collision_callback(self, data):
+    # def __collision_callback(self, data):
+    def __collision_check(self):
         """
         Get model contact status by gazebo bumper plugin.
         NOTICE: In this data, gets contact pair between models.
         """
-        self._collision = False
+        data = rospy.wait_for_message("/robot{}/bumper".format(str(self.current_robot_num)), ContactsState)
+        _collision = False
         # print("Collision Length: {}".format(len(data.states)))
         for i, e in enumerate(data.states):
             # print("Pair {}: {} <---> {}".format(i, e.collision1_name, e.collision2_name))
@@ -285,19 +340,21 @@ class StageEnv(gym.Env):
                 continue
             elif any('wall' in a.lower() for a in A):
                 # print("{} Hit the wall!!!!!".format(c))
-                self._collision = True
+                _collision = True
                 break
             elif any('door' in a.lower() for a in A):
                 # print("{} Hit the wall!!!!!".format(c))
-                self._collision = True
+                _collision = True
                 break
             elif all('robot' in a.lower() for a in A):
                 # print("{} Hit other robot!!".format(c))
-                self._collision = True
+                _collision = True
                 break
             else:
                 raise Exception("Unknown collision condition, collision pair:\n {} <---> {}".format(A[0], A[1]))
-        
+
+        return _collision
+
 
     def render(self):
         """
@@ -314,8 +371,8 @@ class StageEnv(gym.Env):
         #                                      [_im_planner_map, _im_neighbors_goal_map]],
         #                                      text=[["local_map", "agents_map"],
         #                                            ["planner_map", "neighbors_goal_map"]])
-        _im_tile = utils.concat_tile_resize([[self.observation[0].astype('uint8'), self.observation[1].astype('uint8')],
-                                             [self.observation[2].astype('uint8'), self.observation[3].astype('uint8')]],
+        _im_tile = utils.concat_tile_resize([[self.observation['map'][0].astype('uint8'), self.observation['map'][1].astype('uint8')],
+                                             [self.observation['map'][2].astype('uint8'), self.observation['map'][3].astype('uint8')]],
                                              text=[["local_map", "agents_map"],
                                                    ["planner_map", "neighbors_goal_map"]])
         cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
@@ -329,27 +386,37 @@ class StageEnv(gym.Env):
         Output: observation
         """
 
-        for i in range(0, len(self.init_poses)):
-            self.__reset_model_pose("robot{}".format(i), self.init_poses[i][0], self.init_poses[i][1], self.init_poses[i][2])
-            self.__reset_model_pose("goal{}".format(i), self.goals[i][0], self.goals[i][1], self.goals[i][2])
-        time.sleep(1)
-        print("I am robot {}, from ({}, {}, {}) to ({}, {}, {})"\
-                .format(self.current_robot_num,\
-                        self._current_robot_x, self._current_robot_y, self._current_robot_yaw,\
-                        self._current_goal_x, self._current_goal_y, self._current_goal_yaw))
-
-        self.__movebase_client(self.current_robot_num, self._current_goal_x, self._current_goal_y, self._current_goal_yaw)
-        time.sleep(1)
-
-        self._current_robot_done = False
-        self._done_robots = tuple()
-        self._sync_obs_ready = False
+        self._first_planner = True
 
         self.init_poses = self.__get_new_poses(self.global_costmap, self.init_poses)
         self.goals = self.__get_new_poses(self.global_costmap, self.goals)
         self._current_goal_x = self.goals[int(self.current_robot_num)][0]    # Agent's goal x
         self._current_goal_y = self.goals[int(self.current_robot_num)][1]    # Agent's goal y
         self._current_goal_yaw = self.goals[int(self.current_robot_num)][2]  # Agent's goal yaw
+
+        self.stop_robots()
+        for i in range(0, len(self.init_poses)):
+            # Clear costmap
+            try:
+                clear_map = rospy.ServiceProxy('/robot{}_move_base/clear_costmaps'.format(i), EmptySrv)
+                clear_map()
+            except rospy.ServiceException as e:
+                print("Service call failed: {}".format(e))
+            # Reset pose
+            self.__reset_model_pose("robot{}".format(i), self.init_poses[i][0], self.init_poses[i][1], self.init_poses[i][2])
+            self.__reset_model_pose("goal{}".format(i), self.goals[i][0], self.goals[i][1], self.goals[i][2])
+        time.sleep(1)
+        # print("robot {} ({}, {}, {}) -> ({}, {}, {})"\
+        #         .format(self.current_robot_num,\
+        #                 self._current_robot_x, self._current_robot_y, self._current_robot_yaw,\
+        #                 self._current_goal_x, self._current_goal_y, self._current_goal_yaw))
+
+        self.__movebase_client(self.current_robot_num, self._current_goal_x, self._current_goal_y, self._current_goal_yaw)
+        time.sleep(1)
+
+        self._current_robot_done = False
+        self._done_robots = tuple()
+        # self._sync_obs_ready = False
 
         return self.observation
 
@@ -358,37 +425,56 @@ class StageEnv(gym.Env):
         Input: action
         Output: observation, reward, done, info
         """
+        # local costmap
+        _local_costmap = rospy.wait_for_message("/robot{}_move_base/local_costmap/costmap".format(str(self.current_robot_num)), OccupancyGrid)
+        # global planner
+        _global_planner = rospy.wait_for_message("/robot{}_move_base/NavfnROS/plan".format(str(self.current_robot_num)), Path)
+        # lidar
+        _lidar = rospy.wait_for_message("/robot{}/laser".format(str(self.current_robot_num)), LaserScan)
+        # odom
+        _odom_list = []
+        for i in range(0, self.robots_num):
+            _odom = rospy.wait_for_message("/robot{}/mobile/odom".format(str(i)), Odometry)
+            _odom_list.append(_odom)
+        o_list = [_local_costmap, _global_planner, _lidar] + _odom_list
+        self.__callback(o_list)
+
+        # check move_base is working
+        self.__check_robot_move_base(self.current_robot_num)
 
         done = False
         info = {}
-        self._sync_obs_ready = False
+        # self._sync_obs_ready = False
 
         self.__action_to_vel(u)
 
         # moving cost
         r = -0.3
 
+        # Add planner cost
+        r += np.sign(self._planner_length - self._planner_benchmark) * -0.1
+
         # ARRIVED GOAL
         for i, e in enumerate(self.robots_position):
             if utils.dist([e[0], e[1]], [self.goals[i][0], self.goals[i][1]]) <= ARRIVED_RANGE_XY and \
                abs(e[2] - self.goals[i][2]) <= ARRIVED_RANGE_YAW:
-
                 if i == self.current_robot_num:
                     self._current_robot_done = True
-                    r = 20
+                    r = 50
 
         ## The robot which is in collision will get punishment
-        if self._collision:
-            self._current_robot_done = True
+        if self.__collision_check():
+            # self._current_robot_done = True
             r = -2.0
             info = {"I got collision..."}
 
-        self._pub_done.publish(self._current_robot_done)
+        # self._pub_done.publish(self._current_robot_done)
 
-        while not self._sync_obs_ready:
-            pass
+        # while not self._sync_obs_ready:
+        #     pass
 
-        if self.all_robots_done:
+        # if self.all_robots_done:
+        if self._current_robot_done:
             done = True
 
         return self.observation, r, done, info
@@ -406,7 +492,23 @@ class StageEnv(gym.Env):
         msg.angular.z = action[2]
         self._pub_vel.publish(msg)
 
-    def stop_robot(self):
+    def stop_robots(self):
+        """
+        Stop all robots
+        """
+        msg = Twist()
+        msg.linear.x = 0
+        msg.linear.y = 0
+        msg.linear.z = 0
+        msg.angular.x = 0
+        msg.angular.y = 0
+        msg.angular.z = 0
+
+        for i in range(0, self.robots_num):
+            _pub_vel = rospy.Publisher('/robot{}/mobile/cmd_vel'.format(i), Twist, queue_size=1)
+            _pub_vel.publish(msg)
+
+    def stop_current_robot(self):
         """
         Stop current robot
         """
@@ -431,16 +533,17 @@ class StageEnv(gym.Env):
             print("Service call failed: {}".format(e))
 
     def close(self):
+        self.stop_current_robot()
         pass
 
     def __del__(self):
-        self.stop_robot()
+        self.stop_current_robot()
         # Close cv
         cv2.destroyAllWindows()
 
     def exit_handler(self, signal_received, frame):
         # Handle any cleanup here
-        self.stop_robot()
+        self.stop_current_robot()
         print('SIGINT or CTRL-C detected. Exiting gracefully')
         exit(0)
 
@@ -486,6 +589,7 @@ class StageEnv(gym.Env):
         Get global costmap with inflation
         """
 
+        print("Get Global Costmap")
         msg = rospy.wait_for_message('/robot{}_move_base/global_costmap/costmap'.format(id), OccupancyGrid)
         map = np.reshape(msg.data, (msg.info.width, msg.info.height)).astype('uint8')
         # cv2.imshow("Global costmap of Agent {}".format(id), map)
@@ -519,3 +623,16 @@ class StageEnv(gym.Env):
                     break
         return new_poses
 
+    def __check_robot_move_base(self, id):
+        msg = rospy.wait_for_message('/robot{}/move_base/status'.format(id), GoalStatusArray)
+        for m in msg.status_list:
+            if m.status == 4:
+                print("Movebase Aborted... Restarting")
+                self.reset()
+            else:
+                # print("Movebase OK")
+                pass
+
+    def expert_action(self, id):
+        msg = rospy.wait_for_message('/robot{}/move_base/cmd_vel'.format(id), Twist)
+        return np.array([msg.linear.x, msg.linear.y, msg.angular.z], dtype=np.float32)
