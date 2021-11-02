@@ -38,8 +38,8 @@ parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
 parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                     help='target smoothing coefficient(τ) (default: 0.005)')
-parser.add_argument('--lr', type=float, default=0.003, metavar='G',
-                    help='learning rate (default: 0.003)')
+parser.add_argument('--lr', type=float, default=0.0005, metavar='G',
+                    help='learning rate (default: 0.0005)')
 parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                     help='Temperature parameter α determines the relative importance of the entropy\
                             term against the reward (default: 0.2)')
@@ -55,8 +55,8 @@ parser.add_argument('--max_episode_steps', type=int, default=200, metavar='N',
                     help='maximum steps of episode (default: 200)')
 parser.add_argument('--hidden_size', type=int, default=64, metavar='N',
                     help='hidden size (default: 64)')
-parser.add_argument('--updates_per_step', type=int, default=10, metavar='N',
-                    help='model updates per simulator step (default: 10)')
+parser.add_argument('--updates_per_step', type=int, default=100, metavar='N',
+                    help='model updates per simulator step (default: 100)')
 parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
                     help='Steps sampling random actions (default: 10000)')
 parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
@@ -118,12 +118,6 @@ writer = SummaryWriter('runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().str
                                                              args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
 # Agent
-# print("o space {}".format(env.observation_space)) # Box(0, 255, (4, 128, 128), uint8)
-# print("o space shape {}".format(env.observation_space.shape)) # (4, 128, 128)
-# print("o space shape[0] {}".format(env.observation_space.shape[0])) # 4
-# print("action space {}".format(env.action_space)) # Box(-1.0, 1.0, (3,), float32)
-# print("action space shape {}".format(env.action_space.shape)) # (3,)
-# agent = SAC(env.observation_space.shape, env.action_space, args)
 agent = SAC(env.observation_space, env.action_space, args)
 
 if args.load_model is True and os.path.exists('models/'):
@@ -143,7 +137,6 @@ memory = ReplayMemory(args.replay_size, args.seed)
 total_numsteps = 0
 updates = 0
 
-# for i_episode in range(MAX_EPISODES):
 for i_episode in itertools.count(1):
 
     episode_reward = 0
@@ -151,17 +144,16 @@ for i_episode in itertools.count(1):
     done = False
     state = env.reset()
 
-    # while not done:
     for _ in range(args.max_episode_steps):
 
-        # env.render() ## It costs time
+        env.render() ## It costs time
 
         if args.start_steps > total_numsteps:
             action = env.action_space.sample()
         else:
             action = agent.select_action(state)
 
-        _expert_action = env.expert_action(args.current_robot_num)
+        _expert_action = env.expert_action()
         next_state, reward, done, info = env.step(action)
         episode_steps += 1
         total_numsteps += 1
@@ -171,9 +163,8 @@ for i_episode in itertools.count(1):
 
         # Ignore the "done" signal if it comes from hitting the time horizon
         # mask = 1 if episode_steps == env._max_episode_steps else float(not done)
-
-        memory.push(state, action, reward, next_state, done)
         # memory.push(state, action, reward, next_state, mask)
+        memory.push(state, action, reward, next_state, done)
         memory.push_expert(state, _expert_action)
 
         state = next_state
