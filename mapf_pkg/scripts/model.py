@@ -26,60 +26,35 @@ class ValueNetwork(nn.Module):
         _map_space = input_space['map'].shape
         _lidar_space = input_space['lidar'].shape
         _goal_space = input_space['goal'].shape
-        # print("_map_space: {}".format(_map_space)) # (4, 128, 128)
-        # print("_lidar_space: {}".format(_lidar_space)) # (1, 270)
-        # print("_goal_space: {}".format(_goal_space)) # (1, 3)
 
         # map's feature
-        # Input: (4, W, H)
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        # C1 output size: (16, W/2, W/2)
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(4, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        # C2 output size: (32, W/4, W/4)
-        self.conv3 = nn.Sequential(
+            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2),
             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.Flatten()
         )
-        # C3 output size: (64, W/4*W/4)
 
         # lidar's feature
         self.c1 = nn.Sequential(
             nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv1d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.MaxPool1d(3),
-            nn.Flatten()
-        )
-        self.c2 = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(8*90, 256)
         )
 
         self.g = nn.Linear(3, 8)
 
-        self.head1 = nn.Linear(16*10*10+ 256 + 8, 1) # map+lidar+goal
+        self.head1 = nn.Linear(16*20*20 + 256 + 8, 1) # map+lidar+goal
         # self.head1 = nn.Linear(64*32*32, 1)
 
         self.apply(weights_init_)
 
     def forward(self, state: dict):
         s = self.conv1(state['map'])
-        s = self.conv2(s)
-        s = self.conv3(s)
-        # print(state['lidar'].shape) # (32, 1, 270)
         l = self.c1(state['lidar'])
-        l = self.c2(l)
         g = self.g(state['goal'])
         g = g.squeeze()
         # print("s shape {}".format(s.shape)) # Size([batch_size, 65536])
@@ -100,88 +75,54 @@ class QNetwork(nn.Module):
 
         # Q1 architecture
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(4, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv3 = nn.Sequential(
+            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2),
             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.Flatten()
         )
 
         # lidar's feature
         self.c1 = nn.Sequential(
-            nn.Conv1d(1, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv1d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
             nn.MaxPool1d(3),
-            nn.Flatten()
-        )
-        self.c2 = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(8*90, 256)
         )
 
         self.g1 = nn.Linear(3, 8)
 
-        self.head1 = nn.Linear(16*10*10 + 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
+        self.head1 = nn.Linear(16*20*20 + 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
 
         # Q2 architecture
-        self.conv4 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv5 = nn.Sequential(
-            nn.Conv2d(4, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv6 = nn.Sequential(
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2),
             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.Flatten()
         )
 
-        # lidar's feature
-        # Input: (1, 270)
-        self.c3 = nn.Sequential(
+        self.c2 = nn.Sequential(
             nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv1d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.MaxPool1d(3),
-            nn.Flatten()
-        )
-        # c3 output size: (8, 1, 90)
-        self.c4 = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(8*90, 256)
         )
 
         self.g2 = nn.Linear(3, 8)
 
-        self.head2 = nn.Linear(16*10*10+ 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
+        self.head2 = nn.Linear(16*20*20+ 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
 
         self.apply(weights_init_)
 
     def forward(self, state: dict, action):
         s1 = self.conv1(state['map'])
-        s1 = self.conv2(s1)
-        s1 = self.conv3(s1)
-        # s1 = s1.squeeze()
+        s1 = s1.squeeze()
         l1 = self.c1(state['lidar'])
-        l1 = self.c2(l1)
-        # l1 = l1.squeeze()
+        l1 = l1.squeeze()
         g1 = self.g1(state['goal'])
         g1 = g1.squeeze()
         # print("s1 shape {}".format(s1.shape)) # Size([batch_size, 65536])
@@ -191,12 +132,9 @@ class QNetwork(nn.Module):
         # print("cat shape {}".format(torch.cat([s1, l1, g1, action], 1).shape)) # Size([batch_size, 65536+256+8+3])
         v1 = self.head1(torch.cat([s1, l1, g1, action], 1))
 
-        s2 = self.conv4(state['map'])
-        s2 = self.conv5(s2)
-        s2 = self.conv6(s2)
+        s2 = self.conv2(state['map'])
         s2 = s2.squeeze()
-        l2 = self.c3(state['lidar'])
-        l2 = self.c4(l2)
+        l2 = self.c2(state['lidar'])
         l2 = l2.squeeze()
         g2 = self.g2(state['goal'])
         g2 = g2.squeeze()
@@ -214,20 +152,9 @@ class GaussianPolicy(nn.Module):
         _goal_space = input_space['goal'].shape
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(4, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        self.conv3 = nn.Sequential(
+            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(),
+            nn.MaxPool2d(2),
             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
             nn.Flatten()
         )
@@ -236,19 +163,15 @@ class GaussianPolicy(nn.Module):
         # Input: (1, 270)
         self.c1 = nn.Sequential(
             nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv1d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.MaxPool1d(3),
-            nn.Flatten()
-        )
-        # c1 output size: (8, 1, 90)
-        self.c2 = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(8*90, 256)
         )
 
         self.g = nn.Linear(3, 8)
 
-        self.linear1 = nn.Linear(16*10*10+ 256 + 8, hidden_dim) # map_feature+lidar_feature+goal_feature
+        self.linear1 = nn.Linear(16*20*20 + 256 + 8, hidden_dim) # map_feature+lidar_feature+goal_feature
 
         self.mean_linear = nn.Linear(hidden_dim, num_actions)
         self.log_std_linear = nn.Linear(hidden_dim, num_actions)
@@ -257,10 +180,7 @@ class GaussianPolicy(nn.Module):
 
     def forward(self, state: dict):
         x = self.conv1(state['map'])
-        x = self.conv2(x)
-        x = self.conv3(x)
         l = self.c1(state['lidar'])
-        l = self.c2(l)
         # print("g shape {}".format(state['goal'].shape)) # Size([batch_size, 8]) # Size([8])
         g = self.g(state['goal'].squeeze())
         if g.shape == torch.Size([8]): # I know it's weird...
