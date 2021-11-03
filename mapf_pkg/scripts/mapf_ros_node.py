@@ -164,7 +164,7 @@ class MyRosBridge():
 
         _observation = dict()
         _observation['map'] = o
-        _observation['lidar'] = [_lidar_data]
+        _observation['lidar'] = [_lidar_data.ranges]
         _observation['goal'] = [[self._goals[id][0] - _robots_odom[id][0],
                                  self._goals[id][1] - _robots_odom[id][1],
                                  self._goals[id][2] - _robots_odom[id][2]]]

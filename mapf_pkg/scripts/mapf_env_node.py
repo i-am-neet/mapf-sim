@@ -53,18 +53,8 @@ class StageEnv(gym.Env):
         self.resize_observation = resize_observation
         self._planner_benchmark = 0
 
-        # Initialize tensors of Observations
-        self.local_map = torch.zeros(1)
-        self.agents_map = torch.zeros(1)
-        self.planner_map = torch.zeros(1)
-        self.neighbors_goal_map = torch.zeros(1)
-        self.observation = {
-                            'map':torch.stack((self.local_map, self.agents_map, self.planner_map, self.neighbors_goal_map)).numpy(),
-                            'lidar':[[]],
-                            'goal':[[]]
-        }
-        self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=255, shape=(4, self.ros.map_height, self.ros.map_width), dtype=np.uint8),
-                                             lidar=spaces.Box(low=0, high=255, shape=(1, self.ros.lidar_range_size), dtype=np.uint8),
+        self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=1, shape=(4, self.ros.map_height, self.ros.map_width), dtype=np.float32),
+                                             lidar=spaces.Box(low=0, high=1, shape=(1, self.ros.lidar_range_size), dtype=np.float32),
                                              goal=spaces.Box(low=-math.inf, high=math.inf, shape=(1, 3)))
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
@@ -107,7 +97,17 @@ class StageEnv(gym.Env):
 
         self._planner_benchmark = len(self.ros.planner_path)
 
-        return self.ros.get_observation
+        o = self.ros.get_observation
+        _o = dict()
+        # Normalize map to 0-1
+        _o['map'] = o['map']/255
+        # Cutting lidar
+        _l = np.asarray(o['lidar'][0])
+        _l[_l > 1] = 1
+        _o['lidar'] = [_l.tolist()]
+        # Goal
+        _o['goal'] = o['goal']
+        return _o
 
     def step(self, u):
 
@@ -146,7 +146,17 @@ class StageEnv(gym.Env):
             r = -2.0
             info = {"I got collision..."}
 
-        return self.ros.get_observation, r, done, info
+        o = self.ros.get_observation
+        _o = dict()
+        # Normalize map to 0-1
+        _o['map'] = o['map']/255
+        # Cutting lidar
+        _l = np.asarray(o['lidar'][0])
+        _l[_l > 1] = 1
+        _o['lidar'] = [_l.tolist()]
+        # Goal
+        _o['goal'] = o['goal']
+        return _o, r, done, info
 
     def close(self):
         self.ros.stop_robots()
@@ -167,3 +177,5 @@ class StageEnv(gym.Env):
         e_u = self.ros.expert_action
         return e_u
 
+    def stop_robots(self):
+        self.ros.stop_robots()

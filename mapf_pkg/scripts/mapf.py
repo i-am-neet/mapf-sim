@@ -146,7 +146,7 @@ for i_episode in itertools.count(1):
 
     for _ in range(args.max_episode_steps):
 
-        env.render() ## It costs time
+        # env.render() ## It costs time
 
         if args.start_steps > total_numsteps:
             action = env.action_space.sample()
