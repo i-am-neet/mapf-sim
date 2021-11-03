@@ -55,7 +55,7 @@ class StageEnv(gym.Env):
 
         self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=1, shape=(4, self.ros.map_height, self.ros.map_width), dtype=np.float32),
                                              lidar=spaces.Box(low=0, high=1, shape=(1, self.ros.lidar_range_size), dtype=np.float32),
-                                             goal=spaces.Box(low=-math.inf, high=math.inf, shape=(1, 3)))
+                                             goal=spaces.Box(low=0, high=math.pi, shape=(1, 2)))
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
 
@@ -68,9 +68,9 @@ class StageEnv(gym.Env):
         _map_2 = self.ros.get_observation['map'][2].astype('uint8')
         _map_3 = self.ros.get_observation['map'][3].astype('uint8')
         _im_tile = utils.concat_tile_resize([[_map_0, _map_1],
-                                                [_map_2, _map_3]],
-                                                text=[["local_map", "agents_map"],
-                                                    ["planner_map", "neighbors_goal_map"]])
+                                             [_map_2, _map_3]],
+                                             text=[["local_map", "agents_map"],
+                                                 ["planner_map", "neighbors_goal_map"]])
         cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
         cv2.waitKey(1)
 

@@ -13,7 +13,6 @@ from std_msgs.msg import Bool
 from gazebo_msgs.msg import ContactsState, ModelState
 from gazebo_msgs.srv import SetModelState
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-import cv2
 import utils
 import time
 import re
@@ -42,37 +41,6 @@ class MyRosBridge():
         self._my_odom = tuple()
 
         rospy.init_node('mapf_ros_node', anonymous=True)
-
-        # # Subscriber
-        # # Register all topics for message_filters
-        # _subscribers = []
-        # # local costmap
-        # for i in range(0, self._robots_num):
-        #     _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(i)), OccupancyGrid)
-        #     print("/robot{}_move_base/local_costmap/costmap".format(str(i)))
-        #     _subscribers.append(_sub_obs)
-        # # global planner
-        # for i in range(0, self._robots_num):
-        #     _sub_obs = message_filters.Subscriber("/robot{}_move_base/NavfnROS/plan".format(str(i)), Path)
-        #     print("/robot{}_move_base/NavfnROS/plan".format(str(i)))
-        #     _subscribers.append(_sub_obs)
-        # # lidar
-        # for i in range(0, self._robots_num):
-        #     _sub_obs = message_filters.Subscriber("/robot{}/laser".format(str(i)), LaserScan)
-        #     print("/robot{}/laser".format(str(i)))
-        #     _subscribers.append(_sub_obs)
-        # # odom
-        # for i in range(0, self._robots_num):
-        #     _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
-        #     print("/robot{}/mobile/odom".format(str(i)))
-        #     _subscribers.append(_sub_obs)
-
-        # ts = message_filters.ApproximateTimeSynchronizer(_subscribers, 10, 0.1, allow_headerless=True)
-        # ts.registerCallback(self.__callback)
-
-        # while self._map_height == 0:
-        #     print("waiting ROS message_filters...")
-        #     time.sleep(1)
 
         # Waiting until all mapf_env_node started
         rosnode.rosnode_cleanup()
@@ -165,9 +133,15 @@ class MyRosBridge():
         _observation = dict()
         _observation['map'] = o
         _observation['lidar'] = [_lidar_data.ranges]
-        _observation['goal'] = [[self._goals[id][0] - _robots_odom[id][0],
-                                 self._goals[id][1] - _robots_odom[id][1],
-                                 self._goals[id][2] - _robots_odom[id][2]]]
+        _rx = _robots_odom[id][0]
+        _ry = _robots_odom[id][1]
+        _ryaw = _robots_odom[id][2]
+        _gx = self._goals[id][0]
+        _gy = self._goals[id][1]
+        _gyaw = self._goals[id][2]
+        _dd = utils.dist([_rx, _ry], [_gx, _gy])
+        _dyaw = ((_gyaw - _ryaw) + 2*math.pi) % 2*math.pi
+        _observation['goal'] = [[_dd, _dyaw]]
 
         return _observation
 
@@ -276,8 +250,6 @@ class MyRosBridge():
         print("Get Global Costmap")
         msg = rospy.wait_for_message('/robot{}_move_base/global_costmap/costmap'.format(id), OccupancyGrid)
         map = np.reshape(msg.data, (msg.info.width, msg.info.height)).astype('uint8')
-        # cv2.imshow("Global costmap of Agent {}".format(id), map)
-        # cv2.waitKey(1)
         return map
 
     def get_new_poses(self):

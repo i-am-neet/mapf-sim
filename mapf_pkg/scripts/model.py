@@ -10,14 +10,15 @@ epsilon = 1e-6
 # Initialize Policy weights
 def weights_init_(m):
     if isinstance(m, nn.Linear):
-        torch.nn.init.xavier_uniform_(m.weight, gain=1)
+        torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='leaky_relu')
         torch.nn.init.constant_(m.bias, 0)
     elif isinstance(m, nn.Conv2d):
-        torch.nn.init.normal_(m.weight, mean=0.0, std=1.0)
+        torch.nn.init.kaiming_uniform_(m.weight, nonlinearity='leaky_relu')
+        if m.bias is not None:
+            torch.nn.init.constant_(m.bias, 0)
     elif isinstance(m, nn.BatchNorm2d):
-        torch.nn.init.normal_(m.weight, mean=1.0, std=1.0)
-        torch.nn.init.constant_(m.bias, 0)
-
+        nn.init.constant_(m.weight.data, 1)
+        nn.init.constant_(m.bias.data, 0)
 
 class ValueNetwork(nn.Module):
     def __init__(self, input_space: dict):
@@ -45,7 +46,10 @@ class ValueNetwork(nn.Module):
             nn.Linear(8*90, 256)
         )
 
-        self.g = nn.Linear(3, 8)
+        self.g = nn.Sequential(
+            nn.Linear(_goal_space[1], 8),
+            nn.LeakyReLU()
+        )
 
         self.head1 = nn.Linear(16*20*20 + 256 + 8, 1) # map+lidar+goal
         # self.head1 = nn.Linear(64*32*32, 1)
@@ -91,7 +95,10 @@ class QNetwork(nn.Module):
             nn.Linear(8*90, 256)
         )
 
-        self.g1 = nn.Linear(3, 8)
+        self.g1 = nn.Sequential(
+            nn.Linear(_goal_space[1], 8),
+            nn.LeakyReLU()
+        )
 
         self.head1 = nn.Linear(16*20*20 + 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
 
@@ -112,7 +119,10 @@ class QNetwork(nn.Module):
             nn.Linear(8*90, 256)
         )
 
-        self.g2 = nn.Linear(3, 8)
+        self.g2 = nn.Sequential(
+            nn.Linear(_goal_space[1], 8),
+            nn.LeakyReLU()
+        )
 
         self.head2 = nn.Linear(16*20*20+ 256 + 8 + num_actions, 1) # O(map+lidar+goal)+A(3)
 
@@ -169,7 +179,10 @@ class GaussianPolicy(nn.Module):
             nn.Linear(8*90, 256)
         )
 
-        self.g = nn.Linear(3, 8)
+        self.g = nn.Sequential(
+            nn.Linear(_goal_space[1], 8),
+            nn.LeakyReLU()
+        )
 
         self.linear1 = nn.Linear(16*20*20 + 256 + 8, hidden_dim) # map_feature+lidar_feature+goal_feature
 
