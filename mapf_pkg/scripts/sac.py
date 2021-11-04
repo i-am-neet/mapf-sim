@@ -34,8 +34,8 @@ class SAC(object):
         self.critic = QNetwork(input_space, action_space.shape[0], args.hidden_size).to(device=self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
 
-        self.cirtic_target = QNetwork(input_space, action_space.shape[0], args.hidden_size).to(self.device)
-        hard_update(self.cirtic_target, self.critic)
+        self.critic_target = QNetwork(input_space, action_space.shape[0], args.hidden_size).to(self.device)
+        hard_update(self.critic_target, self.critic)
 
         if self.policy_type == "Gaussian":
             # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
@@ -66,7 +66,8 @@ class SAC(object):
         state_map = torch.FloatTensor(state['map']).to(self.device).unsqueeze(0)
         state_lidar = torch.FloatTensor(state['lidar']).to(self.device).unsqueeze(0)
         state_goal = torch.FloatTensor(state['goal']).to(self.device).unsqueeze(0)
-        state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal}
+        state_plan_len = torch.FloatTensor(state['plan_len']).to(self.device).unsqueeze(0)
+        state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal, 'plan_len': state_plan_len}
         if eval is False:
             action, _, _ = self.policy.sample(state)
         else:
@@ -89,39 +90,45 @@ class SAC(object):
 
         # State is array of dictionary like [{"map":value, "lidar":value, "goal":value}, ...]
         # So, convert list to dict below:
-        _state_batch = {'map':[], 'lidar':[], 'goal':[]}
-        _next_state_batch = {'map':[], 'lidar':[], 'goal':[]}
-        _state_expert_batch = {'map':[], 'lidar':[], 'goal':[]}
+        _state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
+        _next_state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
+        _state_expert_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
         for s in state_batch:
             _state_batch['map'].append(s['map'])
             _state_batch['lidar'].append(s['lidar'])
             _state_batch['goal'].append(s['goal'])
+            _state_batch['plan_len'].append(s['plan_len'])
 
         for s in next_state_batch:
             _next_state_batch['map'].append(s['map'])
             _next_state_batch['lidar'].append(s['lidar'])
             _next_state_batch['goal'].append(s['goal'])
+            _next_state_batch['plan_len'].append(s['plan_len'])
 
         if self.use_expert:
             for s in s_e_batch:
                 _state_expert_batch['map'].append(s['map'])
                 _state_expert_batch['lidar'].append(s['lidar'])
                 _state_expert_batch['goal'].append(s['goal'])
+                _state_expert_batch['plan_len'].append(s['plan_len'])
 
-        # _state_batch['map'] = torch.FloatTensor(_state_batch['map']).to(self.device)
-        # _state_batch['lidar'] = torch.FloatTensor(_state_batch['lidar']).to(self.device)
-        # _state_batch['goal'] = torch.FloatTensor(_state_batch['goal']).to(self.device)
-        # _next_state_batch['map'] = torch.FloatTensor(_next_state_batch['map']).to(self.device)
-        # _next_state_batch['lidar'] = torch.FloatTensor(_next_state_batch['lidar']).to(self.device)
-        # _next_state_batch['goal'] = torch.FloatTensor(_next_state_batch['goal']).to(self.device)
-        # if self.use_expert:
-        #     _state_expert_batch['map'] = torch.FloatTensor(_state_expert_batch['map']).to(self.device)
-        #     _state_expert_batch['lidar'] = torch.FloatTensor(_state_expert_batch['lidar']).to(self.device)
-        #     _state_expert_batch['goal'] = torch.FloatTensor(_state_expert_batch['goal']).to(self.device)
-        #     _action_expert_batch = torch.FloatTensor(a_e_batch).to(self.device)
-        # action_batch = torch.FloatTensor(action_batch).to(self.device)
-        # reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
-        # mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+        _state_batch['map'] = torch.FloatTensor(_state_batch['map']).to(self.device)
+        _state_batch['lidar'] = torch.FloatTensor(_state_batch['lidar']).to(self.device)
+        _state_batch['goal'] = torch.FloatTensor(_state_batch['goal']).to(self.device)
+        _state_batch['plan_len'] = torch.FloatTensor(_state_batch['plan_len']).to(self.device)
+        _next_state_batch['map'] = torch.FloatTensor(_next_state_batch['map']).to(self.device)
+        _next_state_batch['lidar'] = torch.FloatTensor(_next_state_batch['lidar']).to(self.device)
+        _next_state_batch['goal'] = torch.FloatTensor(_next_state_batch['goal']).to(self.device)
+        _next_state_batch['plan_len'] = torch.FloatTensor(_next_state_batch['plan_len']).to(self.device)
+        if self.use_expert:
+            _state_expert_batch['map'] = torch.FloatTensor(_state_expert_batch['map']).to(self.device)
+            _state_expert_batch['lidar'] = torch.FloatTensor(_state_expert_batch['lidar']).to(self.device)
+            _state_expert_batch['goal'] = torch.FloatTensor(_state_expert_batch['goal']).to(self.device)
+            _state_expert_batch['plan_len'] = torch.FloatTensor(_state_expert_batch['plan_len']).to(self.device)
+            _action_expert_batch = torch.FloatTensor(a_e_batch).to(self.device)
+        action_batch = torch.FloatTensor(action_batch).to(self.device)
+        reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
+        mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
 
         # SAC_V
         # with torch.no_grad():
@@ -130,7 +137,7 @@ class SAC(object):
 
         with torch.no_grad():
             next_state_action, next_state_log_pi, _ = self.policy.sample(_next_state_batch)
-            qf1_next_target, qf2_next_target = self.cirtic_target(_next_state_batch, next_state_action)
+            qf1_next_target, qf2_next_target = self.critic_target(_next_state_batch, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
         qf1, qf2 = self.critic(_state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
