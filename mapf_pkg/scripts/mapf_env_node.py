@@ -121,11 +121,21 @@ class StageEnv(gym.Env):
         if u.shape != self.action_space.shape:
             raise ValueError("action size ERROR.")
 
+        # planner's direction reward
+        _p_x = self.ros.planner_path[0].pose.position.x
+        _p_y = self.ros.planner_path[0].pose.position.y
+        if any([_p_x, _p_y]) and any([u[0], u[1]]):
+            r = (utils.angle_between([_p_x, _p_y], [u[0], u[1]]) / math.pi) * -0.3 - 0.01
+        else:
+            print("################## OMG ######################")
+            r = -0.01
+
         self.ros.action_to_vel(u)
 
         # moving cost
-        r = -0.3
+        # r = -0.3
 
+        # planner reward
         _path_len = len(self.ros.planner_path)
         r += np.sign(_path_len - self._planner_benchmark) * -0.1
         self._planner_benchmark = _path_len
@@ -141,9 +151,12 @@ class StageEnv(gym.Env):
             done = True
             r = 50
 
+        # robot's direction reward
+        r += np.cos(abs(_g_yaw - _r_yaw)) * 0.1 - 0.1
+
         ## The robot which is in collision will get punishment
         if self.ros.collision_check:
-            r = -2.0
+            r += -2.0
             info = {"I got collision..."}
 
         o = self.ros.get_observation

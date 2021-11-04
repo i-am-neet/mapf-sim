@@ -51,12 +51,12 @@ parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='batch size (default: 64)')
 parser.add_argument('--num_steps', type=int, default=1000000, metavar='N',
                     help='maximum number of steps (default: 1000000)')
-parser.add_argument('--max_episode_steps', type=int, default=200, metavar='N',
-                    help='maximum steps of episode (default: 200)')
+parser.add_argument('--max_episode_steps', type=int, default=300, metavar='N',
+                    help='maximum steps of episode (default: 300)')
 parser.add_argument('--hidden_size', type=int, default=64, metavar='N',
                     help='hidden size (default: 64)')
-parser.add_argument('--updates_per_step', type=int, default=100, metavar='N',
-                    help='model updates per simulator step (default: 100)')
+parser.add_argument('--updates_per_step', type=int, default=50, metavar='N',
+                    help='model updates per simulator step (default: 50)')
 parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
                     help='Steps sampling random actions (default: 10000)')
 parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
@@ -69,12 +69,14 @@ parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME'
                     help="config file of poses' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg')")
 parser.add_argument('--resize_observation', type=int, default=64, metavar='N',
                     help='Resize observation size (default: 64)')
-parser.add_argument('--load_model', type=bool, default=True,
-                    help='Use pretrain model (default: True)')
+parser.add_argument('--load_model', type=bool, default=False,
+                    help='Use pretrain model (default: False)')
 parser.add_argument('--use_expert', type=bool, default=True,
                     help='Use expert (default: True)')
 # parser.add_argument('--cuda', action="store_true",
 #                     help='run on CUDA (default: False)')
+parser.add_argument('--note', type=str, default="",
+                    help="The note string will be added on log's file name")
 args = parser.parse_args()
 
 init_poses = []
@@ -114,8 +116,9 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 #Tesnorboard
-writer = SummaryWriter('runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
-                                                             args.policy, "autotune" if args.automatic_entropy_tuning else ""))
+writer = SummaryWriter('runs/{}_SAC_{}_{}_{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
+                                                             args.policy, "use_expert_" if args.use_expert else "",
+                                                             args.note))
 
 # Agent
 agent = SAC(env.observation_space, env.action_space, args)
@@ -148,6 +151,26 @@ for i_episode in itertools.count(1):
 
         # env.render() ## It costs time
 
+        if len(memory) > args.batch_size:
+
+            if i_episode % 10 == 0:
+                print("Start Update")
+                # It cost times, does it need to stop robots?
+                env.stop_robots()
+
+                # Number of updates per step in environment
+                for _ in range(args.updates_per_step):
+                    # Update parameters of all the networks
+                    # critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
+                    value_loss, critic_1_loss, critic_2_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
+
+                    writer.add_scalar('loss/value', value_loss, updates)
+                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+                    writer.add_scalar('loss/policy', policy_loss, updates)
+                    updates += 1
+                break
+
         if args.start_steps > total_numsteps:
             action = env.action_space.sample()
         else:
@@ -169,26 +192,6 @@ for i_episode in itertools.count(1):
 
         state = next_state
 
-        if len(memory) > args.batch_size:
-
-            if i_episode % 10 == 0:
-                print("Start Update")
-                # It cost times, does it need to stop robots?
-                env.stop_robots()
-
-                # Number of updates per step in environment
-                for _ in range(args.updates_per_step):
-                    # Update parameters of all the networks
-                    # critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
-                    value_loss, critic_1_loss, critic_2_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
-
-                    writer.add_scalar('loss/value', value_loss, updates)
-                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                    writer.add_scalar('loss/policy', policy_loss, updates)
-                    updates += 1
-                break
-
         if done:
             break
 
@@ -202,7 +205,7 @@ for i_episode in itertools.count(1):
     if i_episode % 50 == 0 and args.eval is True:
         print("Start Testing")
         avg_reward = 0.
-        episodes = 5
+        episodes = 10
         for _ in range(episodes):
             state = env.reset()
             episode_reward = 0
