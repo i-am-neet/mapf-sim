@@ -55,7 +55,8 @@ class StageEnv(gym.Env):
 
         self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=1, shape=(4, self.ros.map_height, self.ros.map_width), dtype=np.float32),
                                              lidar=spaces.Box(low=0, high=1, shape=(1, self.ros.lidar_range_size), dtype=np.float32),
-                                             goal=spaces.Box(low=0, high=math.pi, shape=(1, 2)))
+                                             goal=spaces.Box(low=0, high=math.pi, shape=(1, 2)),
+                                             plan_len=spaces.Box(low=0, high=math.inf, shape=(1, 1)))
         self.action_space = spaces.Box(low=-MAX_SPEED, high=MAX_SPEED, shape=(3,), dtype=np.float32)
 
 
@@ -116,7 +117,7 @@ class StageEnv(gym.Env):
         _p_x = self.ros.planner_path[0].pose.position.x
         _p_y = self.ros.planner_path[0].pose.position.y
         if any([_p_x, _p_y]) and any([u[0], u[1]]):
-            r = (utils.angle_between([_p_x, _p_y], [u[0], u[1]]) / math.pi) * -0.3 - 0.01
+            r = (utils.angle_between([_p_x, _p_y], [u[0], u[1]]) / math.pi) * -0.3 - 0.1
         else:
             print("################## OMG ######################")
             r = -0.01
@@ -128,7 +129,7 @@ class StageEnv(gym.Env):
 
         # planner reward
         _path_len = len(self.ros.planner_path)
-        r += np.sign(_path_len - self._planner_benchmark) * -0.1
+        r += (np.sign(_path_len - self._planner_benchmark) * -0.1) - 0.3
         self._planner_benchmark = _path_len
 
         # ARRIVED GOAL
@@ -185,4 +186,9 @@ class StageEnv(gym.Env):
         _o['lidar'] = [_l.tolist()]
         # Goal
         _o['goal'] = o['goal']
+        _o['plan_len'] = o['plan_len']
         return _o
+
+    @property
+    def planner_benchmark(self):
+        return self._planner_benchmark

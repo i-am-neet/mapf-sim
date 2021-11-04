@@ -30,8 +30,8 @@ parser.add_argument('--robot_diameter', default=0.25, type=float,
 parser.add_argument('--map_resolution', default=0.05, type=float,
                     help='The resolution of map (For env)'
                     )
-parser.add_argument('--policy', default="Deterministic",
-                    help='Policy Type: Gaussian | Deterministic (default: Deterministic)')
+parser.add_argument('--policy', default="Gaussian",
+                    help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
 parser.add_argument('--eval', type=bool, default=True,
                     help='Evaluates a policy a policy every 10 episode (default: True)')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
@@ -47,28 +47,28 @@ parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, meta
                     help='Automaically adjust α (default: False)')
 parser.add_argument('--seed', type=int, default=456, metavar='N',
                     help='random seed (default: 456)')
-parser.add_argument('--batch_size', type=int, default=64, metavar='N',
-                    help='batch size (default: 64)')
+parser.add_argument('--batch_size', type=int, default=128, metavar='N',
+                    help='batch size (default: 128)')
 parser.add_argument('--num_steps', type=int, default=1000000, metavar='N',
                     help='maximum number of steps (default: 1000000)')
 parser.add_argument('--max_episode_steps', type=int, default=300, metavar='N',
                     help='maximum steps of episode (default: 300)')
-parser.add_argument('--hidden_size', type=int, default=64, metavar='N',
-                    help='hidden size (default: 64)')
+parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
+                    help='hidden size (default: 256)')
 parser.add_argument('--updates_per_step', type=int, default=50, metavar='N',
                     help='model updates per simulator step (default: 50)')
 parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
                     help='Steps sampling random actions (default: 10000)')
 parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                     help='Value target update per no. of updates per step (default: 1)')
-parser.add_argument('--replay_size', type=int, default=10000, metavar='N',
-                    help='size of replay buffer (default: 10000)')
+parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
+                    help='size of replay buffer (default: 1000000)')
 parser.add_argument('--goals_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_goals.cfg",
                     help="config file of goals' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_goals.cfg')")
 parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg",
                     help="config file of poses' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg')")
-parser.add_argument('--resize_observation', type=int, default=64, metavar='N',
-                    help='Resize observation size (default: 64)')
+# parser.add_argument('--resize_observation', type=int, default=64, metavar='N',
+#                     help='Resize observation size (default: 64)')
 parser.add_argument('--load_model', type=bool, default=False,
                     help='Use pretrain model (default: False)')
 parser.add_argument('--use_expert', type=bool, default=True,
@@ -77,6 +77,11 @@ parser.add_argument('--use_expert', type=bool, default=True,
 #                     help='run on CUDA (default: False)')
 parser.add_argument('--note', type=str, default="",
                     help="The note string will be added on log's file name")
+parser.add_argument('--render', type=bool, default=False,
+                    help='Show env render (default: False)')
+parser.add_argument('--test', type=bool, default=False,
+                    help='Testing, will not record anything (default: False)')
+
 args = parser.parse_args()
 
 init_poses = []
@@ -116,20 +121,21 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 #Tesnorboard
-writer = SummaryWriter('runs/{}_SAC_{}_{}_{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
+if not args.test:
+    writer = SummaryWriter('runs/{}_SAC_{}_{}_{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
                                                              args.policy, "use_expert_" if args.use_expert else "",
                                                              args.note))
+else:
+    print("*****************************************")
+    print("\tTESTING, WON'T RECORD ANYTHING!")
+    print("*****************************************")
 
 # Agent
 agent = SAC(env.observation_space, env.action_space, args)
 
 if args.load_model is True and os.path.exists('models/'):
     agent.load_model("models/sac_actor_{}_".format(args.env_name),
-                     "models/sac_critic_{}_".format(args.env_name),
-                     "models/sac_value_{}_".format(args.env_name),
-                     "models/sac_actor_optim_{}_".format(args.env_name),
-                     "models/sac_critic_optim_{}_".format(args.env_name),
-                     "models/sac_value_optim_{}_".format(args.env_name))
+                     "models/sac_critic_{}_".format(args.env_name))
 else:
     print("Does not use pretrain model.")
 
@@ -146,10 +152,12 @@ for i_episode in itertools.count(1):
     episode_steps = 0
     done = False
     state = env.reset()
+    plan_len = env.planner_benchmark
 
     for _ in range(args.max_episode_steps):
 
-        # env.render() ## It costs time
+        if args.render:
+            env.render() ## It costs time
 
         if len(memory) > args.batch_size:
 
@@ -161,13 +169,22 @@ for i_episode in itertools.count(1):
                 # Number of updates per step in environment
                 for _ in range(args.updates_per_step):
                     # Update parameters of all the networks
-                    # critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
-                    value_loss, critic_1_loss, critic_2_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
+                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates)
 
-                    writer.add_scalar('loss/value', value_loss, updates)
-                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                    writer.add_scalar('loss/policy', policy_loss, updates)
+                    if not args.test:
+                        writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+                        writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+                        writer.add_scalar('loss/policy', policy_loss, updates)
+                        writer.add_scalar('loss/entropy_loss', ent_loss, updates)
+                        writer.add_scalar('entropy_temprature/alpha', alpha, updates)
+
+                    # # SAC_V
+                    # value_loss, critic_1_loss, critic_2_loss, policy_loss = agent.update_parameters(memory, args.batch_size, updates)
+
+                    # writer.add_scalar('loss/value', value_loss, updates)
+                    # writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+                    # writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+                    # writer.add_scalar('loss/policy', policy_loss, updates)
                     updates += 1
                 break
 
@@ -199,8 +216,12 @@ for i_episode in itertools.count(1):
         print("### BREAK ###")
         break
 
-    writer.add_scalar('reward/train', episode_reward, i_episode)
-    print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2)))
+    if not args.test:
+        writer.add_scalar('reward/train', episode_reward, i_episode)
+    print("---")
+    print("Episode: {}, total numsteps: {}, episode steps: {}".format(i_episode, total_numsteps, episode_steps))
+    print("planner length {} / reward {} = {}".format(plan_len, round(episode_reward, 2), round(episode_reward/plan_len, 2)))
+    print("---")
 
     if i_episode % 50 == 0 and args.eval is True:
         print("Start Testing")
@@ -208,6 +229,7 @@ for i_episode in itertools.count(1):
         episodes = 10
         for _ in range(episodes):
             state = env.reset()
+            plan_len = env.planner_benchmark
             episode_reward = 0
             done = False
             # while not done:
@@ -224,10 +246,11 @@ for i_episode in itertools.count(1):
                 if done:
                     break
 
-            avg_reward += episode_reward
+            avg_reward += episode_reward/plan_len
         avg_reward /= episodes
 
-        writer.add_scalar('avg_reward/test', avg_reward, i_episode)
+        if not args.test:
+            writer.add_scalar('avg_reward/test', avg_reward, i_episode)
 
         print("----------------------------------------")
         print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))

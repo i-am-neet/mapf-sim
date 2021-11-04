@@ -142,6 +142,7 @@ class MyRosBridge():
         _dd = utils.dist([_rx, _ry], [_gx, _gy])
         _dyaw = ((_gyaw - _ryaw) + 2*math.pi) % 2*math.pi
         _observation['goal'] = [[_dd, _dyaw]]
+        _observation['plan_len'] = len(self._planner_path)
 
         return _observation
 
