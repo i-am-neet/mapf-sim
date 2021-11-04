@@ -97,16 +97,7 @@ class StageEnv(gym.Env):
 
         self._planner_benchmark = len(self.ros.planner_path)
 
-        o = self.ros.get_observation
-        _o = dict()
-        # Normalize map to 0-1
-        _o['map'] = o['map']/255
-        # Cutting lidar
-        _l = np.asarray(o['lidar'][0])
-        _l[_l > 1] = 1
-        _o['lidar'] = [_l.tolist()]
-        # Goal
-        _o['goal'] = o['goal']
+        _o = self.normalize_observation(self.ros.get_observation)
         return _o
 
     def step(self, u):
@@ -159,16 +150,7 @@ class StageEnv(gym.Env):
             r += -2.0
             info = {"I got collision..."}
 
-        o = self.ros.get_observation
-        _o = dict()
-        # Normalize map to 0-1
-        _o['map'] = o['map']/255
-        # Cutting lidar
-        _l = np.asarray(o['lidar'][0])
-        _l[_l > 1] = 1
-        _o['lidar'] = [_l.tolist()]
-        # Goal
-        _o['goal'] = o['goal']
+        _o = self.normalize_observation(self.ros.get_observation)
         return _o, r, done, info
 
     def close(self):
@@ -192,3 +174,15 @@ class StageEnv(gym.Env):
 
     def stop_robots(self):
         self.ros.stop_robots()
+
+    def normalize_observation(self, o):
+        _o = dict()
+        # Normalize map to 0-1
+        _o['map'] = o['map']/255
+        # Cutting lidar
+        _l = np.asarray(o['lidar'][0])
+        _l[_l > 1] = 1
+        _o['lidar'] = [_l.tolist()]
+        # Goal
+        _o['goal'] = o['goal']
+        return _o
