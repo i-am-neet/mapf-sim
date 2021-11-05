@@ -137,8 +137,8 @@ class QNetwork(nn.Module):
         )
 
         self.head1 = nn.Sequential(
-            # nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
-            nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
+            nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
+            # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU(),
@@ -181,8 +181,8 @@ class QNetwork(nn.Module):
         )
 
         self.head2 = nn.Sequential(
-            # nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
-            nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
+            nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
+            # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU(),
@@ -198,15 +198,10 @@ class QNetwork(nn.Module):
         l1 = l1.squeeze()
         g1 = self.g1(state['goal'])
         g1 = g1.squeeze()
-        # p1 = self.p1(state['plan_len'])
-        # p1 = p1.squeeze()
-        # print("s1 shape {}".format(s1.shape)) # Size([batch_size, 65536])
-        # print("l1 shape {}".format(l1.shape)) # Size([batch_size, 256])
-        # print("g1 shape {}".format(g1.shape)) # Size([batch_size, 8])
-        # print("a shape {}".format(action.shape)) # Size([batch_size, 3])
-        # print("cat shape {}".format(torch.cat([s1, l1, g1, action], 1).shape)) # Size([batch_size, 65536+256+8+3])
-        # v1 = self.head1(torch.cat([s1, l1, g1, a1, action], 1))
-        v1 = self.head1(torch.cat([s1, l1, g1, action], 1))
+        p1 = self.p1(state['plan_len'].unsqueeze(1))
+        p1 = p1.squeeze()
+        v1 = self.head1(torch.cat([s1, l1, g1, p1, action], 1))
+        # v1 = self.head1(torch.cat([s1, l1, g1, action], 1))
 
         s2 = self.conv2(state['map'])
         s2 = s2.squeeze()
@@ -214,10 +209,10 @@ class QNetwork(nn.Module):
         l2 = l2.squeeze()
         g2 = self.g2(state['goal'])
         g2 = g2.squeeze()
-        # p2 = self.p2(state['plan_len'])
-        # p2 = p2.squeeze()
-        # v2 = self.head2(torch.cat([s2, l2, g2, p2, action], 1))
-        v2 = self.head2(torch.cat([s2, l2, g2, action], 1))
+        p2 = self.p2(state['plan_len'].unsqueeze(1))
+        p2 = p2.squeeze()
+        v2 = self.head2(torch.cat([s2, l2, g2, p2, action], 1))
+        # v2 = self.head2(torch.cat([s2, l2, g2, action], 1))
         
         return v1, v2
 
@@ -268,8 +263,8 @@ class GaussianPolicy(nn.Module):
         )
 
         self.linear1 = nn.Sequential(
-            # nn.Linear(16*20*20 + 256 + 8 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
-            nn.Linear(16*20*20 + 256 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
+            nn.Linear(16*20*20 + 256 + 8 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
+            # nn.Linear(16*20*20 + 256 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
             nn.LeakyReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU()
@@ -296,15 +291,16 @@ class GaussianPolicy(nn.Module):
         x = self.conv1(state['map'])
         l = self.c1(state['lidar'])
         g = self.g(state['goal'].squeeze())
-        # print(state['plan_len'].shape)
-        # print(state['plan_len'].squeeze().shape)
-        # p = self.p(state['plan_len'].squeeze())
+        if state['plan_len'].squeeze().shape == torch.Size([]):
+            p = self.p(state['plan_len'].squeeze().unsqueeze(0))
+        else:
+            p = self.p(state['plan_len'].squeeze().unsqueeze(1))
         if g.shape == torch.Size([8]): # I know it's weird...
             g = g.unsqueeze(0)
-        # if p.shape == torch.Size([8]): # I know it's weird...
-        #     p = p.unsqueeze(0)
-        # x = self.linear1(torch.cat([x, l, g, p], 1))
-        x = self.linear1(torch.cat([x, l, g], 1))
+        if p.shape == torch.Size([8]): # I know it's weird...
+            p = p.unsqueeze(0)
+        x = self.linear1(torch.cat([x, l, g, p], 1))
+        # x = self.linear1(torch.cat([x, l, g], 1))
         mean_xy = self.mean_linear_xy(x)
         mean_yaw = self.mean_linear_yaw(x)
         mean = torch.cat([mean_xy, mean_yaw], dim=1)

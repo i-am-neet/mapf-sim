@@ -63,10 +63,13 @@ class SAC(object):
         # self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
     def select_action(self, state, eval=False):
+        print("Select Action")
         state_map = torch.FloatTensor(state['map']).to(self.device).unsqueeze(0)
         state_lidar = torch.FloatTensor(state['lidar']).to(self.device).unsqueeze(0)
         state_goal = torch.FloatTensor(state['goal']).to(self.device).unsqueeze(0)
+        print(state_goal.shape)
         state_plan_len = torch.FloatTensor(state['plan_len']).to(self.device).unsqueeze(0)
+        print(state_plan_len.shape)
         state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal, 'plan_len': state_plan_len}
         if eval is False:
             action, _, _ = self.policy.sample(state)

@@ -257,6 +257,7 @@ for i_episode in itertools.count(1):
         print("----------------------------------------")
 
     if i_episode % 100 == 0:
-        agent.save_model(args.env_name)
+        if not args.test:
+            agent.save_model(args.env_name)
 
 env.close()
