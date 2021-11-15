@@ -3,11 +3,12 @@ Name                        | Version
 ----------------------------|-------:
 Ubuntu                      | 20.04
 Robot Operating System (ROS)| noetic
-Python                      | 3.6.13
-Pip                         | 20.0.1
-Nvidia driver               | 450.119.03
+Python                      | 3.8
+Pip                         | 20.0.2
+Nvidia driver               | 460.91.03
 CUDA                        | 10.1
 cUDNN                       | 7.6
+Gazebo                      | 11.5.1
 
 # Setup
 ## Create python environment
@@ -22,24 +23,6 @@ $ sudo apt install screen python3-catkin-pkg
 $ sudo apt install ros-noetic-hector-sensors-description
 $ sudo apt install ros-noetic-map-server
 $ sudo apt install ros-noetic-move-base
-```
-
-Build Stage from source
-```bash
-$ cd $HOME
-$ mkdir stage4
-$ cd stage4
-$ git clone git://github.com/rtv/Stage.git
-# or https://github.com/CodeFinder2/Stage.git
-$ export STG=$HOME/stg
-$ cmake -DCMAKE_INSTALL_PREFIX=$STG Stage
-$ make
-$ make install
-$ export LD_LIBRARY_PATH=$STG/lib
-# Stage LD
-echo "export STG=$HOME/stg" >> ~/.bashrc
-echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$STG/lib" >> ~/.bashrc
-echo "export PATH=$PATH:$STG/bin" >> ~/.bashrc
 ```
 
 Pytorch:
@@ -64,11 +47,13 @@ $ catkin_make
 ```bash
 $ cd $HOME/mapf_ws && source devel/setup.bash
 # Start RL env of simualtor
-$ roslaunch robot_gazebo home_area.launch
+$ roslaunch robot_gazebo home_area.launch gui:=false # or empty.launch
 # Bringup robots
+# There are 2 arguments for bringup_all.bash:
+# $1:PATH of INIT_POSES.CFG and $2:PATH of INIT_GOALS.CFG
 $ source src/gazebo/robot_gazebo/scripts/bringup_all.bash
 # Quit by
-$ source src/gazebo/robot_gazebo/scripts/quit_all.bash
+$ killall screen
 # MAPF node, each agent needs one
 $ rosrun mapf_pkg mapf.py -h
 usage: mapf.py [-h] [--current-robot-num CURRENT_ROBOT_NUM]
