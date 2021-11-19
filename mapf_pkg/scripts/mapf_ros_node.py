@@ -23,38 +23,36 @@ from actionlib_msgs.msg import GoalStatusArray
 ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
 ARRIVED_RANGE_YAW = math.radians(5)   # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
 
-MAX_SPEED = abs(0.5) # maximum speed (m/s)
-
 class MyRosBridge():
 
     def __init__(self, current_robot_num, robots_num, map_resolution, goals, robot_radius):
 
         self._current_robot_num = current_robot_num
         self._robots_num = robots_num
-        self._map_height = 0
-        self._map_width = 0
+        self._map_height = 40
+        self._map_width = 40
         self._map_resolution = map_resolution
         self._goals = goals
         self._robot_radius = robot_radius
-        self._lidar_range_size = 0
+        self._lidar_range_size = 270
         self._planner_path = None
         self._my_odom = tuple()
 
         rospy.init_node('mapf_ros_node', anonymous=True)
 
         # Waiting until all mapf_env_node started
-        rosnode.rosnode_cleanup()
-        _check_regex = re.compile("/mapf_ros_node*")
-        MAPF_ALIVE_NODES = list()
-        while len(MAPF_ALIVE_NODES) != self._robots_num:
-            print("waiting all mapf_ros_node...")
-            rosnode.rosnode_cleanup()
-            MAPF_ALIVE_NODES.clear()
-            MAPF_NODES = list(filter(_check_regex.match, rosnode.get_node_names()))
-            for n in MAPF_NODES:
-                if rosnode.rosnode_ping(n, max_count=3):
-                    MAPF_ALIVE_NODES.append(n)
-        time.sleep(1)
+        # rosnode.rosnode_cleanup()
+        # _check_regex = re.compile("/mapf_ros_node*")
+        # MAPF_ALIVE_NODES = list()
+        # while len(MAPF_ALIVE_NODES) != self._robots_num:
+        #     print("waiting all mapf_ros_node...")
+        #     rosnode.rosnode_cleanup()
+        #     MAPF_ALIVE_NODES.clear()
+        #     MAPF_NODES = list(filter(_check_regex.match, rosnode.get_node_names()))
+        #     for n in MAPF_NODES:
+        #         if rosnode.rosnode_ping(n, max_count=3):
+        #             MAPF_ALIVE_NODES.append(n)
+        # time.sleep(1)
 
         # Save costmap
         self.global_costmap = self.__get_global_costmap()
@@ -68,22 +66,36 @@ class MyRosBridge():
         id = self._current_robot_num
 
         # local costmap
-        _m = rospy.wait_for_message("/robot{}_move_base/local_costmap/costmap".format(str(id)), OccupancyGrid)
-        self._map_width = _m.info.width
-        self._map_height = _m.info.height
+        try:
+            _m = rospy.wait_for_message("/robot{}_move_base/local_costmap/costmap".format(str(id)), OccupancyGrid, timeout=5)
+        except rospy.ROSException as e:
+            print(e)
+            return None
         _l_m = np.asarray(_m.data)
         _l_m[_l_m < 10] = 0
         _l_m[_l_m >= 10] = 255
         _local_costmap = _l_m.reshape(self._map_height, self._map_width)[::-1].reshape(-1)
         # global planner
-        _global_planner = rospy.wait_for_message("/robot{}_move_base/NavfnROS/plan".format(str(id)), Path)
+        try:
+            _global_planner = rospy.wait_for_message("/robot{}_move_base/NavfnROS/plan".format(str(id)), Path)
+        except rospy.ROSException as e:
+            print(e)
+            return None
         self._planner_path = _global_planner.poses
         # lidar
-        _lidar_data = rospy.wait_for_message("/robot{}/laser".format(str(id)), LaserScan)
+        try:
+            _lidar_data = rospy.wait_for_message("/robot{}/laser".format(str(id)), LaserScan)
+        except rospy.ROSException as e:
+            print(e)
+            return None
         # odom
         _robots_odom = []
         for i in range(0, self._robots_num):
-            _odom = rospy.wait_for_message("/robot{}/mobile/odom".format(str(i)), Odometry)
+            try:
+                _odom = rospy.wait_for_message("/robot{}/mobile/odom".format(str(i)), Odometry)
+            except rospy.ROSException as e:
+                print(e)
+                return None
             _x = _odom.pose.pose.position.x
             _y = _odom.pose.pose.position.y
             _yaw = euler_from_quaternion([_odom.pose.pose.orientation.x,
@@ -128,11 +140,12 @@ class MyRosBridge():
         _neighbors_goal_map = _neighbors_goal_map.reshape(self._map_height, self._map_width)
 
         # Observation is stack all map tensor, then convert to np.array
-        o = np.stack((_local_costmap, _agents_map, _planner_map, _neighbors_goal_map))
+        # o = np.stack((_local_costmap, _agents_map, _planner_map, _neighbors_goal_map))
+        o = np.expand_dims(_planner_map, axis=0)
 
         _observation = dict()
         _observation['map'] = o
-        _observation['lidar'] = [_lidar_data.ranges]
+        _observation['lidar'] = np.array([_lidar_data.ranges])
         _rx = _robots_odom[id][0]
         _ry = _robots_odom[id][1]
         _ryaw = _robots_odom[id][2]
@@ -141,8 +154,9 @@ class MyRosBridge():
         _gyaw = self._goals[id][2]
         _dd = utils.dist([_rx, _ry], [_gx, _gy])
         _dyaw = ((_gyaw - _ryaw) + 2*math.pi) % 2*math.pi
-        _observation['goal'] = [[_dd, _dyaw]]
-        _observation['plan_len'] = [[len(self._planner_path)]]
+        _observation['goal'] = np.array([[_dd, _dyaw]])
+        _observation['plan_len'] = np.array([[len(self._planner_path)]])
+        _observation['robot_info'] = np.array([[_rx, _ry, _ryaw]])
 
         return _observation
 
@@ -152,7 +166,11 @@ class MyRosBridge():
         Get model contact status by gazebo bumper plugin.
         NOTICE: In this data, gets contact pair between models.
         """
-        data = rospy.wait_for_message("/robot{}/bumper".format(str(self._current_robot_num)), ContactsState)
+        try:
+            data = rospy.wait_for_message("/robot{}/bumper".format(str(self._current_robot_num)), ContactsState)
+        except rospy.ROSException as e:
+            print(e)
+            return None
         _collision = False
         # print("Collision Length: {}".format(len(data.states)))
         for i, e in enumerate(data.states):
@@ -187,6 +205,7 @@ class MyRosBridge():
         msg.angular.x = 0
         msg.angular.y = 0
         msg.angular.z = action[2]
+        # msg.angular.z = 0
         _pub_vel = rospy.Publisher('/robot{}/mobile/cmd_vel'.format(self._current_robot_num), Twist, queue_size=1)
         _pub_vel.publish(msg)
 
@@ -293,12 +312,25 @@ class MyRosBridge():
     def expert_action(self):
         msg = rospy.wait_for_message('/robot{}/move_base/cmd_vel'.format(self._current_robot_num), Twist)
         return np.array([msg.linear.x, msg.linear.y, msg.angular.z], dtype=np.float32)
+        # _odom = rospy.wait_for_message("/robot{}/mobile/odom".format(str(self._current_robot_num)), Odometry)
+        # _rx = _odom.pose.pose.position.x
+        # _ry = _odom.pose.pose.position.y
+        # _px = self._planner_path[-1].pose.position.x
+        # _py = self._planner_path[-1].pose.position.y
+        # _x = _px - _rx
+        # _y = _py - _ry
+        # v = np.array([_x, _y], dtype=np.float32)
+        # v[v>1] = 1
+        # v[v<-1] = -1
+        # return v
 
     def reset_poses(self, inits, goals):
         # Reset poses
         for i in range(0, self._robots_num):
             self.__reset_model_pose("robot{}".format(i), inits[i][0], inits[i][1], inits[i][2])
             self.__reset_model_pose("goal{}".format(i), goals[i][0], goals[i][1], goals[i][2])
+            # self.__reset_model_pose("robot{}".format(i), inits[i][0], inits[i][1], 0)
+            # self.__reset_model_pose("goal{}".format(i), goals[i][0], goals[i][1], 0)
 
     def clear_map(self):
 

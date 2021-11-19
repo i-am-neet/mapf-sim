@@ -5,7 +5,7 @@ from torch.optim import Adam
 from utils import soft_update, hard_update
 # SAC_V
 # from model import GaussianPolicy, QNetwork, ValueNetwork
-from model import GaussianPolicy, QNetwork, DeterministicPolicy
+from model import GaussianPolicy, QNetwork
 
 
 class SAC(object):
@@ -48,10 +48,7 @@ class SAC(object):
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
         else:
-            self.alpha = 0
-            self.automatic_entropy_tuning = False
-            self.policy = DeterministicPolicy(input_space, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-            self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
+            raise ValueError("Not supper another type yet.")
 
         # SAC_V
         # self.value = ValueNetwork(input_space).to(device=self.device)
@@ -63,19 +60,16 @@ class SAC(object):
         # self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
     def select_action(self, state, eval=False):
-        print("Select Action")
         state_map = torch.FloatTensor(state['map']).to(self.device).unsqueeze(0)
         state_lidar = torch.FloatTensor(state['lidar']).to(self.device).unsqueeze(0)
         state_goal = torch.FloatTensor(state['goal']).to(self.device).unsqueeze(0)
-        print(state_goal.shape)
         state_plan_len = torch.FloatTensor(state['plan_len']).to(self.device).unsqueeze(0)
-        print(state_plan_len.shape)
-        state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal, 'plan_len': state_plan_len}
+        state_robot_info= torch.FloatTensor(state['robot_info']).to(self.device).unsqueeze(0)
+        state = {'map': state_map, 'lidar': state_lidar, 'goal': state_goal, 'plan_len': state_plan_len, 'robot_info': state_robot_info}
         if eval is False:
             action, _, _ = self.policy.sample(state)
         else:
             _, _, action = self.policy.sample(state)
-            action = torch.tanh(action)
         action = action.detach().cpu().numpy()[0]
         # return self.rescale_action(action)
         return action
@@ -93,20 +87,22 @@ class SAC(object):
 
         # State is array of dictionary like [{"map":value, "lidar":value, "goal":value}, ...]
         # So, convert list to dict below:
-        _state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
-        _next_state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
-        _state_expert_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[]}
+        _state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[], 'robot_info':[]}
+        _next_state_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[], 'robot_info':[]}
+        _state_expert_batch = {'map':[], 'lidar':[], 'goal':[], 'plan_len':[], 'robot_info':[]}
         for s in state_batch:
             _state_batch['map'].append(s['map'])
             _state_batch['lidar'].append(s['lidar'])
             _state_batch['goal'].append(s['goal'])
             _state_batch['plan_len'].append(s['plan_len'])
+            _state_batch['robot_info'].append(s['robot_info'])
 
         for s in next_state_batch:
             _next_state_batch['map'].append(s['map'])
             _next_state_batch['lidar'].append(s['lidar'])
             _next_state_batch['goal'].append(s['goal'])
             _next_state_batch['plan_len'].append(s['plan_len'])
+            _next_state_batch['robot_info'].append(s['robot_info'])
 
         if self.use_expert:
             for s in s_e_batch:
@@ -114,20 +110,24 @@ class SAC(object):
                 _state_expert_batch['lidar'].append(s['lidar'])
                 _state_expert_batch['goal'].append(s['goal'])
                 _state_expert_batch['plan_len'].append(s['plan_len'])
+                _state_expert_batch['robot_info'].append(s['robot_info'])
 
         _state_batch['map'] = torch.FloatTensor(_state_batch['map']).to(self.device)
         _state_batch['lidar'] = torch.FloatTensor(_state_batch['lidar']).to(self.device)
         _state_batch['goal'] = torch.FloatTensor(_state_batch['goal']).to(self.device)
         _state_batch['plan_len'] = torch.FloatTensor(_state_batch['plan_len']).to(self.device)
+        _state_batch['robot_info'] = torch.FloatTensor(_state_batch['robot_info']).to(self.device)
         _next_state_batch['map'] = torch.FloatTensor(_next_state_batch['map']).to(self.device)
         _next_state_batch['lidar'] = torch.FloatTensor(_next_state_batch['lidar']).to(self.device)
         _next_state_batch['goal'] = torch.FloatTensor(_next_state_batch['goal']).to(self.device)
         _next_state_batch['plan_len'] = torch.FloatTensor(_next_state_batch['plan_len']).to(self.device)
+        _next_state_batch['robot_info'] = torch.FloatTensor(_next_state_batch['robot_info']).to(self.device)
         if self.use_expert:
             _state_expert_batch['map'] = torch.FloatTensor(_state_expert_batch['map']).to(self.device)
             _state_expert_batch['lidar'] = torch.FloatTensor(_state_expert_batch['lidar']).to(self.device)
             _state_expert_batch['goal'] = torch.FloatTensor(_state_expert_batch['goal']).to(self.device)
             _state_expert_batch['plan_len'] = torch.FloatTensor(_state_expert_batch['plan_len']).to(self.device)
+            _state_expert_batch['robot_info'] = torch.FloatTensor(_state_expert_batch['robot_info']).to(self.device)
             _action_expert_batch = torch.FloatTensor(a_e_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)

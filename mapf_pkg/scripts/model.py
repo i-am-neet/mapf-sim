@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-LOG_SIG_MAX = 2
-LOG_SIG_MIN = -20
+LOG_SIG_MAX = 1
+LOG_SIG_MIN = -2
 epsilon = 1e-6
 
 # Initialize Policy weights
@@ -20,77 +20,6 @@ def weights_init_(m):
         nn.init.constant_(m.weight.data, 1)
         nn.init.constant_(m.bias.data, 0)
 
-# SAC_V
-# class ValueNetwork(nn.Module):
-#     def __init__(self, input_space: dict, hidden_dim):
-#         super(ValueNetwork, self).__init__()
-
-#         _map_space = input_space['map'].shape
-#         _lidar_space = input_space['lidar'].shape
-#         _goal_space = input_space['goal'].shape
-#         _plan_len_space = input_space['plan_len'].shape
-
-#         # map's feature
-#         self.conv1 = nn.Sequential(
-#             nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
-#             nn.LeakyReLU(),
-#             nn.MaxPool2d(2),
-#             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-#             nn.Flatten()
-#         )
-
-#         # lidar's feature
-#         self.c1 = nn.Sequential(
-#             nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-#             nn.LeakyReLU(),
-#             nn.MaxPool1d(3),
-#             nn.Flatten(),
-#             nn.Linear(8*90, 256)
-#         )
-
-#         self.g = nn.Sequential(
-#             nn.Linear(_goal_space[1], 32),
-#             nn.LeakyReLU(),
-#             nn.Linear(32, 16),
-#             nn.LeakyReLU(),
-#             nn.Linear(16, 8),
-#             nn.LeakyReLU()
-#         )
-
-#         self.a = nn.Sequential(
-#             nn.Linear(_plan_len_space[1], 32),
-#             nn.LeakyReLU(),
-#             nn.Linear(32, 16),
-#             nn.LeakyReLU(),
-#             nn.Linear(16, 8),
-#             nn.LeakyReLU()
-#         )
-
-#         self.head1 = nn.Sequential(
-#             nn.Linear(16*20*20+ 256 + 8 + 8, hidden_dim), # O(map+lidar+goal+plan_len)
-#             nn.LeakyReLU(),
-#             nn.Linear(hidden_dim, hidden_dim),
-#             nn.LeakyReLU(),
-#             nn.Linear(hidden_dim, 1)
-#         )
-
-#         self.apply(weights_init_)
-
-#     def forward(self, state: dict):
-#         s = self.conv1(state['map'])
-#         l = self.c1(state['lidar'])
-#         g = self.g(state['goal'])
-#         g = g.squeeze()
-#         a = self.a(state['plan_len'])
-#         a = a.squeeze()
-#         # print("s shape {}".format(s.shape)) # Size([batch_size, 65536])
-#         # print("l shape {}".format(l.shape)) # Size([batch_size, 270])
-#         # print("g shape {}".format(g.shape)) # Size([batch_size, 3])
-#         v = self.head1(torch.cat([s, l, g, a], 1))
-
-#         return v
-
-
 class QNetwork(nn.Module):
     def __init__(self, input_space: dict, num_actions, hidden_dim):
         super(QNetwork, self).__init__()
@@ -99,119 +28,156 @@ class QNetwork(nn.Module):
         _lidar_space = input_space['lidar'].shape
         _goal_space = input_space['goal'].shape
         _plan_len_space = input_space['plan_len'].shape
+        _robot_info_space = input_space['robot_info'].shape
 
         # Q1 architecture
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
+            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.Flatten()
+            nn.Dropout2d(), # or batch_normalize
+            nn.Flatten(),
+            nn.SELU(),
+            nn.Linear(32*20*20, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
         )
 
         # lidar's feature
-        self.c1 = nn.Sequential(
-            nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            nn.MaxPool1d(3),
-            nn.Flatten(),
-            nn.Linear(8*90, 256)
+        self.l1 = nn.Sequential(
+            nn.Linear(_lidar_space[0], hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
+        )
+        # self.l1 = nn.Sequential(
+        #     nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
+        #     nn.SELU(),
+        #     nn.MaxPool1d(3),
+        #     nn.Flatten(),
+        #     nn.Linear(8*90, 256)
+        # )
+
+        ## MindDa Structure
+        self.info1 = nn.Sequential(
+            nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU()
         )
 
-        self.g1 = nn.Sequential(
-            nn.Linear(_goal_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
-        )
+        # self.g1 = nn.Sequential(
+        #     nn.Linear(_goal_space[1], 32),
+        #     nn.SELU(),
+        #     nn.Linear(32, 16),
+        #     nn.SELU(),
+        #     nn.Linear(16, 8),
+        #     nn.SELU()
+        # )
 
-        self.p1 = nn.Sequential(
-            nn.Linear(_plan_len_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
-        )
+        # self.p1 = nn.Sequential(
+        #     nn.Linear(_plan_len_space[1], 32),
+        #     nn.SELU(),
+        #     nn.Linear(32, 16),
+        #     nn.SELU(),
+        #     nn.Linear(16, 8),
+        #     nn.SELU()
+        # )
 
         self.head1 = nn.Sequential(
-            nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
+            nn.Linear(hidden_dim//4 + hidden_dim + num_actions, hidden_dim),
             # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1)
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU(),
+            nn.Linear(hidden_dim//4, 1)
         )
 
         # Q2 architecture
         self.conv2 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
+            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.Flatten()
-        )
-
-        self.c2 = nn.Sequential(
-            nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            nn.MaxPool1d(3),
+            nn.Dropout2d(), # or batch_normalize
             nn.Flatten(),
-            nn.Linear(8*90, 256)
+            nn.SELU(),
+            nn.Linear(32*20*20, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
         )
 
-        self.g2 = nn.Sequential(
-            nn.Linear(_goal_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
+        self.l2 = nn.Sequential(
+            nn.Linear(_lidar_space[0], hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
         )
 
-        self.p2 = nn.Sequential(
-            nn.Linear(_plan_len_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
+        ## MindDa Structure
+        self.info2 = nn.Sequential(
+            nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU()
         )
 
         self.head2 = nn.Sequential(
-            nn.Linear(16*20*20+ 256 + 8 + 8 + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
+            nn.Linear(hidden_dim//4 + hidden_dim + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
             # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_dim, 1)
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU(),
+            nn.Linear(hidden_dim//4, 1)
         )
 
         self.apply(weights_init_)
 
     def forward(self, state: dict, action):
+        action = action.squeeze()
+
         s1 = self.conv1(state['map'])
         s1 = s1.squeeze()
-        l1 = self.c1(state['lidar'])
-        l1 = l1.squeeze()
-        g1 = self.g1(state['goal'])
-        g1 = g1.squeeze()
-        p1 = self.p1(state['plan_len'].unsqueeze(1))
-        p1 = p1.squeeze()
-        v1 = self.head1(torch.cat([s1, l1, g1, p1, action], 1))
+        l1 = self.l1(state['lidar'])
+        i1 = self.info1(torch.cat([state['robot_info'], state['goal'], state['plan_len'], l1], 2))
+        i1 = i1.squeeze()
+        v1 = self.head1(torch.cat([s1, i1, action], 1))
+        # g1 = self.g1(state['goal'])
+        # g1 = g1.squeeze()
+        # p1 = self.p1(state['plan_len'].unsqueeze(1))
+        # p1 = p1.squeeze()
+        # v1 = self.head1(torch.cat([s1, l1, g1, p1, action], 1))
         # v1 = self.head1(torch.cat([s1, l1, g1, action], 1))
 
         s2 = self.conv2(state['map'])
         s2 = s2.squeeze()
-        l2 = self.c2(state['lidar'])
+        l2 = self.l2(state['lidar'])
         l2 = l2.squeeze()
-        g2 = self.g2(state['goal'])
-        g2 = g2.squeeze()
-        p2 = self.p2(state['plan_len'].unsqueeze(1))
-        p2 = p2.squeeze()
-        v2 = self.head2(torch.cat([s2, l2, g2, p2, action], 1))
+        # g2 = self.g2(state['goal'])
+        # g2 = g2.squeeze()
+        # p2 = self.p2(state['plan_len'].unsqueeze(1))
+        # p2 = p2.squeeze()
+        i2 = self.info2(torch.cat([state['robot_info'], state['goal'], state['plan_len'], l1], 2))
+        i2 = i2.squeeze()
+        v2 = self.head2(torch.cat([s2, i2, action], 1))
+        # v2 = self.head2(torch.cat([s2, l2, g2, p2, action], 1))
         # v2 = self.head2(torch.cat([s2, l2, g2, action], 1))
         
         return v1, v2
@@ -225,55 +191,73 @@ class GaussianPolicy(nn.Module):
         _lidar_space = input_space['lidar'].shape
         _goal_space = input_space['goal'].shape
         _plan_len_space = input_space['plan_len'].shape
+        _robot_info_space = input_space['robot_info'].shape
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
+            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.Flatten()
+            nn.Dropout2d(), # or batch_normalize
+            nn.Flatten(),
+            nn.SELU(),
+            nn.Linear(32*20*20, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
         )
 
         # lidar's feature
-        # Input: (1, 270)
-        self.c1 = nn.Sequential(
-            nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            nn.MaxPool1d(3),
-            nn.Flatten(),
-            nn.Linear(8*90, 256)
+        self.l1 = nn.Sequential(
+            nn.Linear(_lidar_space[0], hidden_dim),
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.SELU()
         )
 
-        self.g = nn.Sequential(
-            nn.Linear(_goal_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
-        )
-
-        self.p = nn.Sequential(
-            nn.Linear(_plan_len_space[1], 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 16),
-            nn.LeakyReLU(),
-            nn.Linear(16, 8),
-            nn.LeakyReLU()
-        )
-
-        self.linear1 = nn.Sequential(
-            nn.Linear(16*20*20 + 256 + 8 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
-            # nn.Linear(16*20*20 + 256 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
-            nn.LeakyReLU(),
+        ## MindDa Structure
+        self.info = nn.Sequential(
+            nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
+            nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.LeakyReLU()
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SELU()
         )
 
-        self.mean_linear_xy = nn.Linear(hidden_dim, 2)
-        self.mean_linear_yaw = nn.Linear(hidden_dim, 1)
-        self.log_std_linear_xy = nn.Linear(hidden_dim, 2)
-        self.log_std_linear_yaw = nn.Linear(hidden_dim, 1)
+        # self.g = nn.Sequential(
+        #     nn.Linear(_goal_space[0], 32),
+        #     nn.SELU(),
+        #     nn.Linear(32, 16),
+        #     nn.SELU(),
+        #     nn.Linear(16, 8),
+        #     nn.SELU()
+        # )
+
+        # self.p = nn.Sequential(
+        #     nn.Linear(_plan_len_space[0], 32),
+        #     nn.SELU(),
+        #     nn.Linear(32, 16),
+        #     nn.SELU(),
+        #     nn.Linear(16, 8),
+        #     nn.SELU()
+        # )
+
+        self.fc1 = nn.Sequential(
+            nn.Linear(hidden_dim//4 + hidden_dim, hidden_dim),
+            # nn.Linear(hidden_dim//4 + hidden_dim//4 + 8 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
+            # nn.Linear(16*20*20 + 256 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
+            nn.SELU(),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.SELU(),
+            nn.Linear(hidden_dim//2, hidden_dim//4)
+        )
+
+        self.mean_linear = nn.Linear(hidden_dim//4, num_actions)
+        self.log_std_linear = nn.Linear(hidden_dim//4, num_actions)
 
         self.apply(weights_init_)
 
@@ -289,24 +273,29 @@ class GaussianPolicy(nn.Module):
 
     def forward(self, state: dict):
         x = self.conv1(state['map'])
-        l = self.c1(state['lidar'])
-        g = self.g(state['goal'].squeeze())
-        if state['plan_len'].squeeze().shape == torch.Size([]):
-            p = self.p(state['plan_len'].squeeze().unsqueeze(0))
-        else:
-            p = self.p(state['plan_len'].squeeze().unsqueeze(1))
-        if g.shape == torch.Size([8]): # I know it's weird...
-            g = g.unsqueeze(0)
-        if p.shape == torch.Size([8]): # I know it's weird...
-            p = p.unsqueeze(0)
-        x = self.linear1(torch.cat([x, l, g, p], 1))
+        l = self.l1(state['lidar'])
+        # g = self.g(state['goal'].squeeze())
+        # if state['plan_len'].squeeze().shape == torch.Size([]):
+        #     p = self.p(state['plan_len'].squeeze().unsqueeze(0))
+        # else:
+        #     p = self.p(state['plan_len'].squeeze().unsqueeze(1))
+        # if g.shape == torch.Size([8]): # I know it's weird...
+        #     g = g.unsqueeze(0)
+        # if p.shape == torch.Size([8]): # I know it's weird...
+        #     p = p.unsqueeze(0)
+        # if l.shape == torch.Size([64]): # I know it's weird...
+        #     l = l.unsqueeze(0)
+        i = self.info(torch.cat([state['robot_info'], state['goal'], state['plan_len'], l], len(l.shape)-1))
+        x = x.unsqueeze(1).squeeze()
+        i = i.squeeze()
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)
+            i = i.unsqueeze(0)
+        x = self.fc1(torch.cat([x, i], len(i.shape)-1))
+        # x = self.fc1(torch.cat([x, l, g, p], 1))
         # x = self.linear1(torch.cat([x, l, g], 1))
-        mean_xy = self.mean_linear_xy(x)
-        mean_yaw = self.mean_linear_yaw(x)
-        mean = torch.cat([mean_xy, mean_yaw], dim=1)
-        log_std_xy = self.log_std_linear_xy(x)
-        log_std_yaw = self.log_std_linear_yaw(x)
-        log_std = torch.cat([log_std_xy, log_std_yaw], dim=1)
+        mean = self.mean_linear(x)
+        log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
         return mean, log_std
 
@@ -339,80 +328,3 @@ class GaussianPolicy(nn.Module):
         self.action_scale = self.action_scale.to(device)
         self.action_bias = self.action_bias.to(device)
         return super(GaussianPolicy, self).to(device)
-
-class DeterministicPolicy(nn.Module):
-    def __init__(self, input_space: dict, num_actions, hidden_dim, action_space=None):
-        super(DeterministicPolicy, self).__init__()
-
-        _map_space = input_space['map'].shape
-        _lidar_space = input_space['lidar'].shape
-        _goal_space = input_space['goal'].shape
-
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.Flatten()
-        )
-
-        # lidar's feature
-        # Input: (1, 270)
-        self.c1 = nn.Sequential(
-            nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(),
-            nn.MaxPool1d(3),
-            nn.Flatten(),
-            nn.Linear(8*90, 256)
-        )
-
-        self.g = nn.Sequential(
-            nn.Linear(_goal_space[1], 8),
-            nn.LeakyReLU()
-        )
-
-        self.linear1 = nn.Linear(16*20*20 + 256 + 8, hidden_dim) # map_feature+lidar_feature+goal_feature
-
-        self.mean = nn.Linear(hidden_dim, num_actions)
-        self.noise = torch.Tensor(num_actions)
-
-        self.apply(weights_init_)
-
-        # action rescaling
-        if action_space is None:
-            self.action_scale = 1.
-            self.action_bias = 0.
-        else:
-            self.action_scale = torch.FloatTensor(
-                (action_space.high - action_space.low) / 2.)
-            self.action_bias = torch.FloatTensor(
-                (action_space.high + action_space.low) / 2.)
-
-    def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
-        mean = torch.tanh(self.mean(x)) * self.action_scale + self.action_bias
-        return mean
-
-    def forward(self, state: dict):
-        x = self.conv1(state['map'])
-        l = self.c1(state['lidar'])
-        g = self.g(state['goal'].squeeze())
-        if g.shape == torch.Size([8]): # I know it's weird...
-            g = g.unsqueeze(0)
-        x = self.linear1(torch.cat([x, l, g], 1))
-        mean = torch.tanh(self.mean(x)) * self.action_scale + self.action_bias
-        return mean
-
-    def sample(self, state):
-        mean = self.forward(state)
-        noise = self.noise.normal_(0., std=0.1)
-        noise = noise.clamp(-0.25, 0.25)
-        action = mean + noise
-        return action, torch.tensor(0.), mean
-
-    def to(self, device):
-        self.action_scale = self.action_scale.to(device)
-        self.action_bias = self.action_bias.to(device)
-        self.noise = self.noise.to(device)
-        return super(DeterministicPolicy, self).to(device)

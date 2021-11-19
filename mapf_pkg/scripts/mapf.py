@@ -38,8 +38,8 @@ parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
 parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                     help='target smoothing coefficient(τ) (default: 0.005)')
-parser.add_argument('--lr', type=float, default=0.0005, metavar='G',
-                    help='learning rate (default: 0.0005)')
+parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
+                    help='learning rate (default: 0.0003)')
 parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                     help='Temperature parameter α determines the relative importance of the entropy\
                             term against the reward (default: 0.2)')
@@ -47,18 +47,20 @@ parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, meta
                     help='Automaically adjust α (default: False)')
 parser.add_argument('--seed', type=int, default=456, metavar='N',
                     help='random seed (default: 456)')
-parser.add_argument('--batch_size', type=int, default=128, metavar='N',
-                    help='batch size (default: 128)')
+parser.add_argument('--batch_size', type=int, default=256, metavar='N',
+                    help='batch size (default: 256)')
 parser.add_argument('--num_steps', type=int, default=1000000, metavar='N',
                     help='maximum number of steps (default: 1000000)')
-parser.add_argument('--max_episode_steps', type=int, default=300, metavar='N',
-                    help='maximum steps of episode (default: 300)')
+parser.add_argument('--max_episode_steps', type=int, default=200, metavar='N',
+                    help='maximum steps of episode (default: 200)')
 parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                     help='hidden size (default: 256)')
-parser.add_argument('--updates_per_step', type=int, default=50, metavar='N',
-                    help='model updates per simulator step (default: 50)')
-parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
-                    help='Steps sampling random actions (default: 10000)')
+parser.add_argument('--updates_per_step', type=int, default=100, metavar='N',
+                    help='model updates per simulator step (default: 100)')
+parser.add_argument('--expert_steps', type=int, default=10000, metavar='N',
+                    help='Steps sampling expert actions (default: 10000)')
+parser.add_argument('--start_steps', type=int, default=20000, metavar='N',
+                    help='Steps sampling random actions (default: 20000)')
 parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                     help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
@@ -188,7 +190,9 @@ for i_episode in itertools.count(1):
                     updates += 1
                 break
 
-        if args.start_steps > total_numsteps:
+        if args.expert_steps > total_numsteps:
+            action = env.expert_action()
+        elif args.start_steps > total_numsteps:
             action = env.action_space.sample()
         else:
             action = agent.select_action(state)
@@ -217,10 +221,10 @@ for i_episode in itertools.count(1):
         break
 
     if not args.test:
-        writer.add_scalar('reward/train', episode_reward, i_episode)
+        writer.add_scalar('reward/train', episode_reward/plan_len, i_episode)
     print("---")
     print("Episode: {}, total numsteps: {}, episode steps: {}".format(i_episode, total_numsteps, episode_steps))
-    print("planner length {} / reward {} = {}".format(plan_len, round(episode_reward, 2), round(episode_reward/plan_len, 2)))
+    print("reward {} / planner length {} = {}".format(round(episode_reward, 2), plan_len, round(episode_reward/plan_len, 2)))
     print("---")
 
     if i_episode % 50 == 0 and args.eval is True:
@@ -229,11 +233,11 @@ for i_episode in itertools.count(1):
         episodes = 10
         for _ in range(episodes):
             state = env.reset()
-            plan_len = env.planner_benchmark
             episode_reward = 0
             done = False
+            plan_len = env.planner_benchmark
             # while not done:
-            for _ in range(args.max_episode_steps):
+            for t in range(args.max_episode_steps):
                 action = agent.select_action(state, eval=True)
 
                 next_state, reward, done, info = env.step(action)
@@ -242,6 +246,9 @@ for i_episode in itertools.count(1):
                 # memory.push(state, action, reward, next_state, done)
 
                 state = next_state
+
+                if t % 20 == 0:
+                    print(t)
 
                 if done:
                     break
