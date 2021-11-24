@@ -97,8 +97,8 @@ class StageEnv(gym.Env):
         self.ros.goals = self.goals
         self.ros.reset_poses(_init_poses, self.goals)
         time.sleep(1)
-        # self.ros.movebase_client(self.goals[self.current_robot_num][0], self.goals[self.current_robot_num][1], self.goals[self.current_robot_num][2])
-        self.ros.movebase_client(self.goals[self.current_robot_num][0], self.goals[self.current_robot_num][1], 0.0)
+        self.ros.movebase_client(self.goals[self.current_robot_num][0], self.goals[self.current_robot_num][1], self.goals[self.current_robot_num][2])
+        # self.ros.movebase_client(self.goals[self.current_robot_num][0], self.goals[self.current_robot_num][1], 0.0)
         time.sleep(1)
 
         o = self.ros.get_observation

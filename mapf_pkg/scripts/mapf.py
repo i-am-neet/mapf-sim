@@ -195,7 +195,7 @@ for i_episode in itertools.count(1):
         elif args.start_steps > total_numsteps:
             action = env.action_space.sample()
         else:
-            action = agent.select_action(state)
+            action, _, _ = agent.select_action(state)
 
         _expert_action = env.expert_action()
         next_state, reward, done, info = env.step(action)
@@ -238,7 +238,7 @@ for i_episode in itertools.count(1):
             plan_len = env.planner_benchmark
             # while not done:
             for t in range(args.max_episode_steps):
-                action = agent.select_action(state, eval=True)
+                _, _, action = agent.select_action(state, eval=True)
 
                 next_state, reward, done, info = env.step(action)
                 episode_reward += reward
