@@ -65,16 +65,16 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
                     help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 1000000)')
-parser.add_argument('--goals_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_goals.cfg",
-                    help="config file of goals' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_goals.cfg')")
-parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg",
-                    help="config file of poses' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg')")
+parser.add_argument('--goals_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_goals_one.cfg",
+                    help="config file of goals' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_goals_one.cfg')")
+parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_poses_one.cfg",
+                    help="config file of poses' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_poses_one.cfg')")
 # parser.add_argument('--resize_observation', type=int, default=64, metavar='N',
 #                     help='Resize observation size (default: 64)')
 parser.add_argument('--load_model', type=bool, default=False,
                     help='Use pretrain model (default: False)')
-parser.add_argument('--use_expert', type=bool, default=True,
-                    help='Use expert (default: True)')
+parser.add_argument('--use_expert', type=bool, default=False,
+                    help='Use expert (default: False)')
 # parser.add_argument('--cuda', action="store_true",
 #                     help='run on CUDA (default: False)')
 parser.add_argument('--note', type=str, default="",
@@ -190,7 +190,7 @@ for i_episode in itertools.count(1):
                     updates += 1
                 break
 
-        if args.expert_steps > total_numsteps:
+        if args.expert_steps > total_numsteps and args.use_expert:
             action = env.expert_action()
         elif args.start_steps > total_numsteps:
             action = env.action_space.sample()
@@ -258,13 +258,10 @@ for i_episode in itertools.count(1):
 
         if not args.test:
             writer.add_scalar('avg_reward/test', avg_reward, i_episode)
+            agent.save_model(args.env_name)
 
         print("----------------------------------------")
         print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))
         print("----------------------------------------")
-
-    if i_episode % 100 == 0:
-        if not args.test:
-            agent.save_model(args.env_name)
 
 env.close()

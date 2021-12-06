@@ -272,17 +272,37 @@ class MyRosBridge():
         map = np.reshape(msg.data, (msg.info.width, msg.info.height)).astype('uint8')
         return map
 
-    def get_new_poses(self):
+    def get_new_poses(self, refs=None, min_d=None, max_d=None):
         """
         Determine poses of robots and goals for next episode
         Return poses that locate at available position in costmap
+
+        If sets all arguments, get new poses by refs' poses
+        min_d < r < max_d, 0 < phi < 3.14159
+        new_poses_x = refs_poses_x + r*cos(phi)
+        new_poses_y = refs_poses_y + r*sin(phi)
         """
+        USE_REFS = False
+        if any([refs, min_d, max_d]) & all([refs, min_d, max_d]):
+            USE_REFS = True
+        elif any([refs, min_d, max_d]):
+            raise ValueError("three arguments required!")
+
         _map = copy.deepcopy(self.global_costmap)
         new_poses = []
         for i in range(0, self._robots_num):
             while True:
-                _x = int(np.random.rand()*len(_map[0]))
-                _y = int(np.random.rand()*len(_map))
+                if USE_REFS:
+                    # create new poses by image coordinate
+                    _r = np.random.uniform(low=min_d, high=max_d)
+                    _phi = np.random.uniform(low=0, high=2*np.pi)
+                    _x = int((refs[i][0] + _r*np.cos(_phi))/self._map_resolution + len(_map[0])/2)
+                    _y = int(len(_map)/2 - (refs[i][1] + _r*np.sin(_phi))/self._map_resolution)
+                    if _x < 0 or _x >= len(_map[0]) or _y < 0 or _y >= len(_map):
+                        continue
+                else:
+                    _x = int(np.random.rand()*len(_map[0]))
+                    _y = int(np.random.rand()*len(_map))
                 _yaw = np.random.rand()*math.pi
                 if _map[_x][_y] == 0: # available
                     __x = _x - len(_map[0])/2

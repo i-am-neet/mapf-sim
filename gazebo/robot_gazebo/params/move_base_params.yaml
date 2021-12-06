@@ -8,7 +8,7 @@ planner_frequency: 30.0
 planner_patience: 5.0
 
 oscillation_timeout: 9.0
-oscillation_distance: 0.1
+oscillation_distance: 0.01
 
 # local planner - default is trajectory rollout
 # base_local_planner: "dwa_local_planner/DWAPlannerROS"

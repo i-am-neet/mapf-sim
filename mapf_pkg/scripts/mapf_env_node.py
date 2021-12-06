@@ -10,6 +10,7 @@ from gym import spaces
 from gym.utils import seeding
 from signal import signal, SIGINT
 from mapf_ros_node import MyRosBridge
+from utils.env_util import EventCounter
 
 import torch
 from torchvision import transforms
@@ -79,6 +80,7 @@ class StageEnv(gym.Env):
         cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _map_0)
         cv2.waitKey(1)
 
+    @EventCounter(schedules=[20, 80, 200, 400, 800, 1400, 2200], matters=[0.4, 0.6, 0.9, 1.2, 1.6, 2.0, 2.4, 2.8])
     def reset(self):
         """
         When all robots are done!
@@ -92,8 +94,9 @@ class StageEnv(gym.Env):
 
         self.ros.clear_map()
 
-        _init_poses = self.ros.get_new_poses()
-        self.goals = self.ros.get_new_poses()
+        # self.goals = self.ros.get_new_poses()
+        self.goals = [(0, 0, 0)]
+        _init_poses = self.ros.get_new_poses(refs=self.goals, min_d=0.28, max_d=self.reset.matter)
         self.ros.goals = self.goals
         self.ros.reset_poses(_init_poses, self.goals)
         time.sleep(1)
@@ -128,7 +131,7 @@ class StageEnv(gym.Env):
         if any([_p_x, _p_y]) and any([u[0], u[1]]):
             r = np.cos(utils.angle_between([_p_x, _p_y], [u[0], u[1]])) * 0.3 - 0.4
         else:
-            print("################## OMG ######################")
+            # print("################## OMG ######################")
             r = -0.01
 
         # if utils.dist((u[0], u[1]), (0, 0)) < 0.05:
