@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-LOG_SIG_MAX = 1
-LOG_SIG_MIN = -2
+LOG_SIG_MAX = -0.5
+LOG_SIG_MIN = -3
 epsilon = 1e-6
 
 # Initialize Policy weights
@@ -32,17 +32,20 @@ class QNetwork(nn.Module):
 
         # Q1 architecture
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
-            nn.SELU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(_map_space[0], 6, kernel_size=3, stride=1, padding=1),
             nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Dropout2d(), # or batch_normalize
+            # nn.BatchNorm2d(6),
+            nn.Conv2d(6, 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(16, 120, kernel_size=3, stride=1, padding=1),
+            # nn.Dropout2d(), # or batch_normalize
+            nn.SELU(),
             nn.Flatten(),
-            nn.SELU(),
-            nn.Linear(32*20*20, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.Linear(120*10*10, hidden_dim),
+            # nn.SELU(),
+            # nn.Linear(hidden_dim//2, hidden_dim//4),
             nn.SELU()
         )
 
@@ -55,66 +58,39 @@ class QNetwork(nn.Module):
             nn.Linear(hidden_dim//2, hidden_dim//4),
             nn.SELU()
         )
-        # self.l1 = nn.Sequential(
-        #     nn.Conv1d(_lidar_space[0], 8, kernel_size=3, stride=1, padding=1),
-        #     nn.SELU(),
-        #     nn.MaxPool1d(3),
-        #     nn.Flatten(),
-        #     nn.Linear(8*90, 256)
-        # )
 
         ## MindDa Structure
         self.info1 = nn.Sequential(
             nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SELU()
         )
 
-        # self.g1 = nn.Sequential(
-        #     nn.Linear(_goal_space[1], 32),
-        #     nn.SELU(),
-        #     nn.Linear(32, 16),
-        #     nn.SELU(),
-        #     nn.Linear(16, 8),
-        #     nn.SELU()
-        # )
-
-        # self.p1 = nn.Sequential(
-        #     nn.Linear(_plan_len_space[1], 32),
-        #     nn.SELU(),
-        #     nn.Linear(32, 16),
-        #     nn.SELU(),
-        #     nn.Linear(16, 8),
-        #     nn.SELU()
-        # )
-
         self.head1 = nn.Sequential(
-            nn.Linear(hidden_dim//4 + hidden_dim + num_actions, hidden_dim),
+            nn.Linear(hidden_dim + hidden_dim + num_actions, hidden_dim),
             # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4),
-            nn.SELU(),
-            nn.Linear(hidden_dim//4, 1)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1)
         )
 
         # Q2 architecture
         self.conv2 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
-            nn.SELU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(_map_space[0], 6, kernel_size=3, stride=1, padding=1),
             nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Dropout2d(), # or batch_normalize
+            # nn.BatchNorm2d(6),
+            nn.Conv2d(6, 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(16, 120, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
             nn.Flatten(),
-            nn.SELU(),
-            nn.Linear(32*20*20, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.Linear(120*10*10, hidden_dim),
             nn.SELU()
         )
 
@@ -131,21 +107,19 @@ class QNetwork(nn.Module):
         self.info2 = nn.Sequential(
             nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SELU()
         )
 
         self.head2 = nn.Sequential(
-            nn.Linear(hidden_dim//4 + hidden_dim + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
+            nn.Linear(hidden_dim + hidden_dim + num_actions, hidden_dim), # O(map+lidar+goal+plan)+A(3)
             # nn.Linear(16*20*20+ 256 + 8 + num_actions, hidden_dim), # O(map+lidar+goal)+A(3)
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4),
-            nn.SELU(),
-            nn.Linear(hidden_dim//4, 1)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1)
         )
 
         self.apply(weights_init_)
@@ -169,12 +143,11 @@ class QNetwork(nn.Module):
         s2 = self.conv2(state['map'])
         s2 = s2.squeeze()
         l2 = self.l2(state['lidar'])
-        l2 = l2.squeeze()
         # g2 = self.g2(state['goal'])
         # g2 = g2.squeeze()
         # p2 = self.p2(state['plan_len'].unsqueeze(1))
         # p2 = p2.squeeze()
-        i2 = self.info2(torch.cat([state['robot_info'], state['goal'], state['plan_len'], l1], 2))
+        i2 = self.info2(torch.cat([state['robot_info'], state['goal'], state['plan_len'], l2], 2))
         i2 = i2.squeeze()
         v2 = self.head2(torch.cat([s2, i2, action], 1))
         # v2 = self.head2(torch.cat([s2, l2, g2, p2, action], 1))
@@ -194,17 +167,28 @@ class GaussianPolicy(nn.Module):
         _robot_info_space = input_space['robot_info'].shape
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
-            nn.SELU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            # nn.Conv2d(_map_space[0], 16, kernel_size=3, stride=1, padding=1),
+            # nn.SELU(),
+            # nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            # nn.SELU(),
+            # nn.MaxPool2d(2),
+            # nn.Flatten(),
+            # nn.SELU(),
+            # nn.Linear(32*20*20, hidden_dim//2),
+            # nn.SELU(),
+            # nn.Linear(hidden_dim//2, hidden_dim//4),
+            # nn.SELU()
+            nn.Conv2d(_map_space[0], 6, kernel_size=3, stride=1, padding=1),
             nn.SELU(),
             nn.MaxPool2d(2),
-            nn.Dropout2d(), # or batch_normalize
+            # nn.BatchNorm2d(6),
+            nn.Conv2d(6, 16, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(16, 120, kernel_size=3, stride=1, padding=1),
+            nn.SELU(),
             nn.Flatten(),
-            nn.SELU(),
-            nn.Linear(32*20*20, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4),
+            nn.Linear(120*10*10, hidden_dim),
             nn.SELU()
         )
 
@@ -222,42 +206,25 @@ class GaussianPolicy(nn.Module):
         self.info = nn.Sequential(
             nn.Linear(_robot_info_space[0] + _goal_space[0] + _plan_len_space[0] + hidden_dim//4, hidden_dim),
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.SELU(),
+            # nn.Linear(hidden_dim, hidden_dim),
+            # nn.SELU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.SELU()
         )
 
-        # self.g = nn.Sequential(
-        #     nn.Linear(_goal_space[0], 32),
-        #     nn.SELU(),
-        #     nn.Linear(32, 16),
-        #     nn.SELU(),
-        #     nn.Linear(16, 8),
-        #     nn.SELU()
-        # )
-
-        # self.p = nn.Sequential(
-        #     nn.Linear(_plan_len_space[0], 32),
-        #     nn.SELU(),
-        #     nn.Linear(32, 16),
-        #     nn.SELU(),
-        #     nn.Linear(16, 8),
-        #     nn.SELU()
-        # )
-
         self.fc1 = nn.Sequential(
-            nn.Linear(hidden_dim//4 + hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim + hidden_dim, hidden_dim),
             # nn.Linear(hidden_dim//4 + hidden_dim//4 + 8 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
             # nn.Linear(16*20*20 + 256 + 8, hidden_dim), # map_feature+lidar_feature+goal_feature
             nn.SELU(),
-            nn.Linear(hidden_dim, hidden_dim//2),
-            nn.SELU(),
-            nn.Linear(hidden_dim//2, hidden_dim//4)
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh()
+            # nn.SELU(),
+            # nn.Linear(hidden_dim//2, hidden_dim//4)
         )
 
-        self.mean_linear = nn.Linear(hidden_dim//4, num_actions)
-        self.log_std_linear = nn.Linear(hidden_dim//4, num_actions)
+        self.mean_linear = nn.Linear(hidden_dim, num_actions)
+        self.log_std_linear = nn.Linear(hidden_dim, num_actions)
 
         self.apply(weights_init_)
 

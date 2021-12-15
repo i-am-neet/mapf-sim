@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-INIT_POSES_CFG_FILE=${1:-$(rosls robot_gazebo/config/init_poses.cfg)}
-INIT_GOALS_CFG_FILE=${2:-$(rosls robot_gazebo/config/init_goals.cfg)}
+INIT_POSES_CFG_FILE=${1:-$(rosls robot_gazebo/config/init_poses_one.cfg)}
+INIT_GOALS_CFG_FILE=${2:-$(rosls robot_gazebo/config/init_goals_one.cfg)}
 echo "Read file: $INIT_POSES_CFG_FILE"
 echo "Read file: $INIT_GOALS_CFG_FILE"
 

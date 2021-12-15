@@ -38,8 +38,8 @@ parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
 parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                     help='target smoothing coefficient(τ) (default: 0.005)')
-parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
-                    help='learning rate (default: 0.0003)')
+parser.add_argument('--lr', type=float, default=0.001, metavar='G',
+                    help='learning rate (default: 0.001)')
 parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                     help='Temperature parameter α determines the relative importance of the entropy\
                             term against the reward (default: 0.2)')
@@ -53,8 +53,8 @@ parser.add_argument('--num_steps', type=int, default=1000000, metavar='N',
                     help='maximum number of steps (default: 1000000)')
 parser.add_argument('--max_episode_steps', type=int, default=200, metavar='N',
                     help='maximum steps of episode (default: 200)')
-parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
-                    help='hidden size (default: 256)')
+parser.add_argument('--hidden_size', type=int, default=512, metavar='N',
+                    help='hidden size (default: 512)')
 parser.add_argument('--updates_per_step', type=int, default=100, metavar='N',
                     help='model updates per simulator step (default: 100)')
 parser.add_argument('--expert_steps', type=int, default=10000, metavar='N',
@@ -188,6 +188,7 @@ for i_episode in itertools.count(1):
                     # writer.add_scalar('loss/critic_2', critic_2_loss, updates)
                     # writer.add_scalar('loss/policy', policy_loss, updates)
                     updates += 1
+                agent.lr_decay_step()
                 break
 
         if args.expert_steps > total_numsteps and args.use_expert:

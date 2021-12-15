@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.optim import Adam
 from utils import soft_update, hard_update
 # SAC_V
@@ -33,6 +34,7 @@ class SAC(object):
 
         self.critic = QNetwork(input_space, action_space.shape[0], args.hidden_size).to(device=self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
+        self.critic_scheduler = optim.lr_scheduler.StepLR(self.critic_optim, step_size=50, gamma=0.8)
 
         self.critic_target = QNetwork(input_space, action_space.shape[0], args.hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
@@ -43,9 +45,11 @@ class SAC(object):
                 self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item()
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
+                self.alpha_scheduler = optim.lr_scheduler.StepLR(self.alpha_optim, step_size=50, gamma=0.8)
 
             self.policy = GaussianPolicy(input_space, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
+            self.policy_scheduler = optim.lr_scheduler.StepLR(self.policy_optim, step_size=50, gamma=0.8)
 
         else:
             raise ValueError("Not supper another type yet.")
@@ -239,3 +243,9 @@ class SAC(object):
             self.policy.load_state_dict(torch.load(actor_path))
         if critic_path is not None:
             self.critic.load_state_dict(torch.load(critic_path))
+
+    def lr_decay_step(self):
+        self.critic_scheduler.step()
+        self.policy_scheduler.step()
+        if self.automatic_entropy_tuning is True:
+            self.alpha_scheduler.step()
