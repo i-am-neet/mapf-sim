@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  message_filters
 )
 
 ## System dependencies are found with CMake's conventions
@@ -49,8 +50,6 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate messages in the 'msg' folder
 # add_message_files(
 #   FILES
-#   Message1.msg
-#   Message2.msg
 # )
 
 ## Generate services in the 'srv' folder
@@ -133,7 +132,11 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/mapf_pkg_node.cpp)
+add_executable(mapf_obs_node src/mapf_obs_node.cpp)
+target_link_libraries(mapf_obs_node
+  ${catkin_LIBRARIES}
+)
+add_dependencies(mapf_obs_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
