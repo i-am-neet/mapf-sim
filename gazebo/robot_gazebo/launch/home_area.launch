@@ -4,6 +4,10 @@
   <arg name="world_file" default="$(find robot_gazebo)/worlds/home-area.world" />
   <arg name="map_file"       default=" $(find robot_gazebo)/maps/resolution=005/home-area.yaml"/> <!-- robopark_plan -->
 
+  <param name="goals_init_file" value="$(find robot_gazebo)/config/init_goals.cfg" />
+  <param name="poses_init_file" value="$(find robot_gazebo)/config/init_poses.cfg" />
+  <rosparam file="$(find robot_gazebo)/params/robots_setup.yaml" command="load" />
+
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <arg name="world_name" value="$(arg world_file)"/>
     <arg name="paused" value="false"/>
