@@ -39,132 +39,124 @@ def movebase_client(id, gx, gy, gyaw):
 
     client.send_goal(goal)
 
-class MyObservation():
+_pub_obs = rospy.Publisher('/observations', obsArray, queue_size=1)
 
-    def __init__(self, robots_num,
-                       robot_radius,
-                       goals,
-                       map_resolution):
+robots_num = rospy.get_param("/robots_num")
+robot_radius = rospy.get_param("/robot_radius")
+goals = utils.read_file(rospy.get_param("/goals_init_file"))
+map_resolution = rospy.get_param("/map_resolution")
+map_width = 40
+map_height = 40
 
-        if len(goals) != robots_num:
-            raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
+_lasers = []
+_odoms = []
+_local_maps = []
+_planners = []
+_o = obs()
+_o_arr = obsArray()
 
-        signal(SIGINT, self.exit_handler)
+def my_observations():
 
-        # Initialize variables of Environment
-        self.goals = goals
-        self.robots_num = robots_num
-        self.robot_radius = robot_radius
-        self.map_resolution = map_resolution
+    _o_arr.observations.clear()
+    _lasers.clear()
+    _odoms.clear()
+    _local_maps.clear()
+    _planners.clear()
 
-        rospy.init_node('mapf_obs_node', anonymous=True)
-
-        # Initialize
-        for i in range(0, self.robots_num):
-            movebase_client(i, self.goals[i][0], self.goals[i][1], self.goals[i][2])
-
-        # Publisher
-        self._pub_obs = rospy.Publisher('/observations', obsArray, queue_size=1)
-
-        # Subscriber
-        _subscribers = []
-        print("Laser scans")
-        for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot{}/laser".format(str(i)), LaserScan)
-            print("\t/robot{}/laser".format(str(i)))
-            _subscribers.append(_sub_obs)
-        print("Odoms")
-        for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot{}/mobile/odom".format(str(i)), Odometry)
-            print("\t/robot{}/mobile/odom".format(str(i)))
-            _subscribers.append(_sub_obs)
-        print("Local costmaps")
-        for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot{}_move_base/local_costmap/costmap".format(str(i)), OccupancyGrid)
-            print("\t/robot{}_move_base/local_costmap/costmap".format(str(i)))
-            _subscribers.append(_sub_obs)
-        print("Planner paths")
-        for i in range(0, self.robots_num):
-            _sub_obs = message_filters.Subscriber("/robot{}_move_base/NavfnROS/plan".format(str(i)), Path)
-            print("\t/robot{}_move_base/NavfnROS/plan".format(str(i)))
-            _subscribers.append(_sub_obs)
-
-        # ts = message_filters.TimeSynchronizer(_subscribers, 10)
-        ts = message_filters.ApproximateTimeSynchronizer(_subscribers, 10, 0.1, allow_headerless=True)
-        ts.registerCallback(self.__callback)
-
-        rospy.spin()
-
-    def __callback(self, *data):
-        """
-        N is amount of robots
-        callback value:
-            data[0]: robot1's laser_scan
-            data[N-1]: robotN's laser_scan
-            data[N]: robot1's odom
-            data[2N-1]: robotN's odom
-            data[2N]: robot1's local_map
-            data[3N-1]: robotN's local_map
-            data[3N]: robot1's planner path
-            data[4N-1]: robotN's planner path
-
-        Observations are created by this function
-        mapf_pkg/obs.msg
-            sensor_msgs/LaserScan scan
-            nav_msgs/Path path
-            nav_msgs/OccupancyGrid local_map
-            nav_msgs/OccupancyGrid agents_map
-            nav_msgs/OccupancyGrid neighbors_goal_map
-            nav_msgs/OccupancyGrid planner_map
-
-        mapf_pkg/obsArry.msg
-            obs[] observations
-        """
-        _o = obs()
-        _o_arr = obsArray()
-
-        for i in range(0, self.robots_num):
-            # scan
-            _o.scan = data[i]
-            # path
-            _o.path = data[3*self.robots_num + i]
-            # local_map
-            _l_m = np.asarray(data[2*self.robots_num + i].data) # type(_l_m) is ndarray
+    for i in range(0, robots_num):
+        try:
+            _m = rospy.wait_for_message("/robot{}/laser".format(str(i)), LaserScan, timeout=5)
+            _lasers.append(_m)
+        except rospy.ROSException as e:
+            print(e)
+            return None
+        try:
+            _m = rospy.wait_for_message("/robot{}/mobile/odom".format(str(i)), Odometry, timeout=5)
+            _x = _m.pose.pose.position.x
+            _y = _m.pose.pose.position.y
+            _yaw = euler_from_quaternion([_m.pose.pose.orientation.x,
+                                            _m.pose.pose.orientation.y,
+                                            _m.pose.pose.orientation.z,
+                                            _m.pose.pose.orientation.w])[2]
+            _odoms.append((_x, _y, _yaw))
+        except rospy.ROSException as e:
+            print(e)
+            return None
+        try:
+            _m = rospy.wait_for_message("/robot{}_move_base/local_costmap/costmap".format(str(i)), OccupancyGrid, timeout=5)
+            # _l_m = np.asarray(_m.data)
+            _l_m = np.array(_m.data, dtype='uint8')
             _l_m[_l_m < 10] = 0
             _l_m[_l_m >= 10] = 255
-            # _o.local_map = _l_m.reshape(40, 40)[::-1].reshape(-1).tolist()
-            _o.local_map = [1,2,3]
+            _l_m = _l_m.reshape(map_height, map_width)[::-1].reshape(-1)
+            _local_maps.append(_l_m)
+        except rospy.ROSException as e:
+            print(e)
+            return None
+        try:
+            _m = rospy.wait_for_message("/robot{}_move_base/NavfnROS/plan".format(str(i)), Path, timeout=5)
+            _planners.append(_m)
+        except rospy.ROSException as e:
+            print(e)
+            return None
 
-            _current_robot_x = data[self.robots_num + i].pose.pose.position.x
-            _current_robot_y = data[self.robots_num + i].pose.pose.position.y
-            _current_robot_yaw = euler_from_quaternion([data[self.robots_num + i].pose.pose.orientation.x,
-                                                        data[self.robots_num + i].pose.pose.orientation.y,
-                                                        data[self.robots_num + i].pose.pose.orientation.z,
-                                                        data[self.robots_num + i].pose.pose.orientation.w])[2]
-            # _o.agents_map
-            # _o.neighbors_goal_map
-            # _o.planner_map
+    for i in range(0, robots_num):
 
-            _o_arr.observations.append(_o)
+        _o.scan = _lasers[i]
+        _o.path = _planners[i]
+        _o.local_map = _local_maps[i].tolist()
 
-        self._pub_obs.publish(_o_arr)
+        _x = _odoms[i][0] / map_resolution
+        _y = _odoms[i][1] / map_resolution
+        _yaw = _odoms[i][2]
 
-    def close(self):
-        pass
+        _planner_map = np.zeros(_local_maps[i].size)
+        _agents_map = np.zeros(_local_maps[i].size)
+        _neighbors_goal_map = np.zeros(_local_maps[i].size)
+        _planner_map = utils.draw_path(_planner_map, map_width, map_height, _x, _y, _planners[i].poses, map_resolution)
+        _o.planner_map = _planner_map.astype('uint8').tolist()
 
-    def __del__(self):
-        cv2.destroyAllWindows()
-        pass
 
-    def exit_handler(self, signal_received, frame):
-        # Handle any cleanup here
-        print('SIGINT or CTRL-C detected. Exiting gracefully')
-        exit(0)
+        # # Scale unit for pixel with map's resolution (meter -> pixels)
+        my_x = _odoms[i][0] / map_resolution
+        my_y = _odoms[i][1] / map_resolution
+        my_yaw = _odoms[i][2]
+
+        for j, e in enumerate(_odoms):
+            _rx = e[0] / map_resolution
+            _ry = e[1] / map_resolution
+
+            if abs(_rx - my_x) <= map_width/2 and abs(_ry - my_y) <= map_height/2:
+
+                _agents_map = utils.draw_robot(_agents_map, map_width, map_height, _rx - my_x, _ry - my_y, robot_radius, map_resolution)
+                _o.agents_map = _agents_map.astype('uint8').tolist()
+
+                # Neighbors
+                if i != int(j):
+                    print(i)
+                    print(j)
+                    print(len(goals))
+                    _ngx = goals[j][0] / map_resolution     # Neighbor's goal x
+                    _ngy = goals[j][1] / map_resolution     # Neighbor's goal y
+                    _ngyaw = goals[j][2]                         # Neighbor's goal yaw
+                    _neighbors_goal_map = utils.draw_neighbors_goal(_neighbors_goal_map, map_width, map_height, _ngx, _ngy, my_x, my_y, robot_radius, map_resolution)
+                    _o.neighbors_goal_map = _neighbors_goal_map.astype('uint8').tolist()
+
+        _o_arr.observations.append(_o)
+
+    _pub_obs.publish(_o_arr)
 
 if __name__ == "__main__":
-    robots_num = rospy.get_param("/robots_num")
-    robot_radius = rospy.get_param("/robot_radius")
-    goals = utils.read_file(rospy.get_param("/goals_init_file"))
-    print(goals)
-    map_resolution = rospy.get_param("/map_resolution")
-    MyObservation(robots_num, robot_radius, goals, map_resolution)
+
+    rospy.init_node('mapf_obs_node', anonymous=True)
+    r = rospy.Rate(100)
+
+    print("Sending move_base's goal:")
+    for i in range(0, robots_num):
+        print("robot {} will go to ({}, {}, {})".format(i, goals[i][0], goals[i][1], goals[i][2]))
+        movebase_client(i, goals[i][0], goals[i][1], goals[i][2])
+
+    print("Start getting observations")
+    while not rospy.is_shutdown():
+        my_observations()
+        r.sleep()
