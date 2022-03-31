@@ -6,7 +6,7 @@ import rosnode
 import message_filters
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
-from mapf_pkg.msg import obs, obsArray
+from mapf_pkg.msg import obs, obsArray, float1d, float2d
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 import utils
 from matplotlib import pyplot as plt
@@ -18,7 +18,14 @@ from signal import signal, SIGINT
 from mapf_ros_node import MyRosBridge
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from geometry_msgs.msg import Quaternion
+from mapf_pkg.srv import ChangeGoals, ChangeGoalsResponse
 import actionlib
+
+def exit_handler(self, signal_received, frame):
+    # Handle any cleanup here
+    self.ros.stop_robots()
+    print('SIGINT or CTRL-C detected. Exiting gracefully')
+    exit(0)
 
 def movebase_client(id, gx, gy, gyaw):
     """
@@ -39,7 +46,19 @@ def movebase_client(id, gx, gy, gyaw):
 
     client.send_goal(goal)
 
+def handle_change_goals(req):
+    if len(req.new_goals.data) != robots_num:
+        print("WRONG AMOUNT!")
+        return ChangeGoalsResponse(False, 'Wrong amount of goals!')
+    else:
+        global goals
+        goals = []
+        for r in req.new_goals.data:
+            goals.append(tuple(r.data))
+        return ChangeGoalsResponse(True, 'Goals are changed with {}'.format(goals))
+
 _pub_obs = rospy.Publisher('/observations', obsArray, queue_size=1)
+rospy.Service('change_goals', ChangeGoals, handle_change_goals)
 
 robots_num = rospy.get_param("/robots_num")
 robot_radius = rospy.get_param("/robot_radius")
@@ -52,17 +71,16 @@ _lasers = []
 _odoms = []
 _local_maps = []
 _planners = []
-_o = obs()
-_o_arr = obsArray()
 
 def my_observations():
 
-    _o_arr.observations.clear()
+    _o_arr = obsArray()
     _lasers.clear()
     _odoms.clear()
     _local_maps.clear()
     _planners.clear()
 
+    # st = time.time()
     for i in range(0, robots_num):
         try:
             _m = rospy.wait_for_message("/robot{}/laser".format(str(i)), LaserScan, timeout=5)
@@ -99,12 +117,15 @@ def my_observations():
         except rospy.ROSException as e:
             print(e)
             return None
+    # print("sub's time {}".format(time.time()-st)) # 0.4s
 
     for i in range(0, robots_num):
 
+        _o = obs()
         _o.scan = _lasers[i]
         _o.path = _planners[i]
         _o.local_map = _local_maps[i].tolist()
+        _o.odom = list(_odoms[i])
 
         _x = _odoms[i][0] / map_resolution
         _y = _odoms[i][1] / map_resolution
@@ -113,6 +134,12 @@ def my_observations():
         _planner_map = np.zeros(_local_maps[i].size)
         _agents_map = np.zeros(_local_maps[i].size)
         _neighbors_goal_map = np.zeros(_local_maps[i].size)
+
+        # Initialize to avoid publish nothing
+        _o.planner_map = _planner_map.astype('uint8').tolist()
+        _o.agents_map = _agents_map.astype('uint8').tolist()
+        _o.neighbors_goal_map = _neighbors_goal_map.astype('uint8').tolist()
+
         _planner_map = utils.draw_path(_planner_map, map_width, map_height, _x, _y, _planners[i].poses, map_resolution)
         _o.planner_map = _planner_map.astype('uint8').tolist()
 
@@ -133,9 +160,6 @@ def my_observations():
 
                 # Neighbors
                 if i != int(j):
-                    print(i)
-                    print(j)
-                    print(len(goals))
                     _ngx = goals[j][0] / map_resolution     # Neighbor's goal x
                     _ngy = goals[j][1] / map_resolution     # Neighbor's goal y
                     _ngyaw = goals[j][2]                         # Neighbor's goal yaw
@@ -147,6 +171,8 @@ def my_observations():
     _pub_obs.publish(_o_arr)
 
 if __name__ == "__main__":
+
+    signal(SIGINT, exit_handler)
 
     rospy.init_node('mapf_obs_node', anonymous=True)
     r = rospy.Rate(100)

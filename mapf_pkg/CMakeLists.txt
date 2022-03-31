@@ -55,14 +55,15 @@ add_message_files(
   FILES
   obs.msg
   obsArray.msg
+  float1d.msg
+  float2d.msg
 )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  ChangeGoals.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(

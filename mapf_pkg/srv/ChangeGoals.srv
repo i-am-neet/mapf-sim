@@ -1,0 +1,4 @@
+float2d new_goals
+---
+bool success
+string message

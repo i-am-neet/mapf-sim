@@ -19,6 +19,8 @@ import re
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from actionlib_msgs.msg import GoalStatusArray
+from mapf_pkg.msg import obs, obsArray, float1d, float2d
+from mapf_pkg.srv import *
 
 ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
 ARRIVED_RANGE_YAW = math.radians(5)   # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
@@ -40,22 +42,34 @@ class MyRosBridge():
 
         rospy.init_node('mapf_ros_node', anonymous=True)
 
-        # Waiting until all mapf_env_node started
-        # rosnode.rosnode_cleanup()
-        # _check_regex = re.compile("/mapf_ros_node*")
-        # MAPF_ALIVE_NODES = list()
-        # while len(MAPF_ALIVE_NODES) != self._robots_num:
-        #     print("waiting all mapf_ros_node...")
-        #     rosnode.rosnode_cleanup()
-        #     MAPF_ALIVE_NODES.clear()
-        #     MAPF_NODES = list(filter(_check_regex.match, rosnode.get_node_names()))
-        #     for n in MAPF_NODES:
-        #         if rosnode.rosnode_ping(n, max_count=3):
-        #             MAPF_ALIVE_NODES.append(n)
-        # time.sleep(1)
-
         # Save costmap
         self.global_costmap = self.__get_global_costmap()
+
+    def obs_converter(self, msg, id):
+
+        _local_costmap = np.asarray(list(msg.observations[id].local_map)).reshape(self._map_height, self._map_width)
+        _agents_map = np.asarray(list(msg.observations[id].agents_map)).reshape(self._map_height, self._map_width)
+        _planner_map = np.asarray(list(msg.observations[id].planner_map)).reshape(self._map_height, self._map_width)
+        _neighbors_goal_map = np.asarray(list(msg.observations[id].neighbors_goal_map)).reshape(self._map_height, self._map_width)
+
+        o = np.stack((_local_costmap, _agents_map, _planner_map, _neighbors_goal_map))
+
+        _observation = dict()
+        _observation['map'] = o
+        _observation['lidar'] = np.array([msg.observations[id].scan.ranges])
+        _rx = msg.observations[id].odom[0]
+        _ry = msg.observations[id].odom[1]
+        _ryaw = msg.observations[id].odom[2]
+        _gx = self.goals[id][0]
+        _gy = self.goals[id][1]
+        _gyaw = self.goals[id][2]
+        _dd = utils.dist([_rx, _ry], [_gx, _gy])
+        _dyaw = ((_gyaw - _ryaw) + 2*math.pi) % 2*math.pi
+        _observation['goal'] = np.array([[_dd, _dyaw]])
+        _observation['plan_len'] = np.array([[len(self._planner_path)]])
+        _observation['robot_info'] = np.array([[_rx, _ry, _ryaw]])
+
+        return _observation
 
     @property
     def get_observation(self):
@@ -67,98 +81,16 @@ class MyRosBridge():
 
         # local costmap
         try:
-            _m = rospy.wait_for_message("/robot{}_move_base/local_costmap/costmap".format(str(id)), OccupancyGrid, timeout=5)
+            _m = rospy.wait_for_message("/observations", obsArray, timeout=5)
         except rospy.ROSException as e:
             print(e)
             return None
-        _l_m = np.asarray(_m.data)
-        _l_m[_l_m < 10] = 0
-        _l_m[_l_m >= 10] = 255
-        _local_costmap = _l_m.reshape(self._map_height, self._map_width)[::-1].reshape(-1)
-        # global planner
-        try:
-            _global_planner = rospy.wait_for_message("/robot{}_move_base/NavfnROS/plan".format(str(id)), Path)
-        except rospy.ROSException as e:
-            print(e)
-            return None
-        self._planner_path = _global_planner.poses
-        # lidar
-        try:
-            _lidar_data = rospy.wait_for_message("/robot{}/laser".format(str(id)), LaserScan)
-        except rospy.ROSException as e:
-            print(e)
-            return None
-        # odom
-        _robots_odom = []
-        for i in range(0, self._robots_num):
-            try:
-                _odom = rospy.wait_for_message("/robot{}/mobile/odom".format(str(i)), Odometry)
-            except rospy.ROSException as e:
-                print(e)
-                return None
-            _x = _odom.pose.pose.position.x
-            _y = _odom.pose.pose.position.y
-            _yaw = euler_from_quaternion([_odom.pose.pose.orientation.x,
-                                          _odom.pose.pose.orientation.y,
-                                          _odom.pose.pose.orientation.z,
-                                          _odom.pose.pose.orientation.w])[2]
-            _robots_odom.append((_x, _y, _yaw))
 
-        # Scale unit for pixel with map's resolution (meter -> pixels)
-        my_x = _robots_odom[id][0] / self._map_resolution
-        my_y = _robots_odom[id][1] / self._map_resolution
-        my_yaw = _robots_odom[id][2]
+        self._my_odom = tuple(_m.observations[id].odom)
+        self._planner_path = _m.observations[id].path.poses
+        _o = self.obs_converter(_m, id)
 
-        self._my_odom = (_robots_odom[id][0], _robots_odom[id][1], _robots_odom[id][2])
-
-        # Initialize size equal to local costmap
-        _planner_map = np.zeros(_local_costmap.size)
-        _agents_map = np.zeros(_local_costmap.size)
-        _neighbors_goal_map = np.zeros(_local_costmap.size)
-
-        _planner_map = utils.draw_path(_planner_map, self._map_width, self._map_height, my_x, my_y, self._planner_path, self._map_resolution)
-
-        for i, e in enumerate(_robots_odom):
-            _rx = e[0] / self._map_resolution
-            _ry = e[1] / self._map_resolution
-
-            if abs(_rx - my_x) <= self._map_width/2 and abs(_ry - my_y) <= self._map_height/2:
-
-                _agents_map = utils.draw_robot(_agents_map, self._map_width, self._map_height, _rx - my_x, _ry - my_y, self._robot_radius, self._map_resolution)
-
-                # Neighbors
-                if i != int(id):
-                    _ngx = self._goals[i][0] / self._map_resolution     # Neighbor's goal x
-                    _ngy = self._goals[i][1] / self._map_resolution     # Neighbor's goal y
-                    _ngyaw = self._goals[i][2]                         # Neighbor's goal yaw
-                    _neighbors_goal_map = utils.draw_neighbors_goal(_neighbors_goal_map, self._map_width, self._map_height, _ngx, _ngy, my_x, my_y, self._robot_radius, self._map_resolution)
-
-        # Reshape map to 2-dims
-        _local_costmap = _local_costmap.reshape(self._map_height, self._map_width)
-        _agents_map = _agents_map.reshape(self._map_height, self._map_width)
-        _planner_map = _planner_map.reshape(self._map_height, self._map_width)
-        _neighbors_goal_map = _neighbors_goal_map.reshape(self._map_height, self._map_width)
-
-        # Observation is stack all map tensor, then convert to np.array
-        # o = np.stack((_local_costmap, _agents_map, _planner_map, _neighbors_goal_map))
-        o = np.expand_dims(_planner_map, axis=0)
-
-        _observation = dict()
-        _observation['map'] = o
-        _observation['lidar'] = np.array([_lidar_data.ranges])
-        _rx = _robots_odom[id][0]
-        _ry = _robots_odom[id][1]
-        _ryaw = _robots_odom[id][2]
-        _gx = self._goals[id][0]
-        _gy = self._goals[id][1]
-        _gyaw = self._goals[id][2]
-        _dd = utils.dist([_rx, _ry], [_gx, _gy])
-        _dyaw = ((_gyaw - _ryaw) + 2*math.pi) % 2*math.pi
-        _observation['goal'] = np.array([[_dd, _dyaw]])
-        _observation['plan_len'] = np.array([[len(self._planner_path)]])
-        _observation['robot_info'] = np.array([[_rx, _ry, _ryaw]])
-
-        return _observation
+        return _o
 
     @property
     def collision_check(self):
@@ -345,7 +277,7 @@ class MyRosBridge():
         # return v
 
     def reset_poses(self, inits, goals):
-        # Reset poses
+        # Reset poses on Gazebo ONLY
         for i in range(0, self._robots_num):
             self.__reset_model_pose("robot{}".format(i), inits[i][0], inits[i][1], inits[i][2])
             self.__reset_model_pose("goal{}".format(i), goals[i][0], goals[i][1], goals[i][2])
@@ -368,6 +300,7 @@ class MyRosBridge():
 
     @goals.setter
     def goals(self, new_goals):
+        self.change_goals_client(new_goals)
         self._goals = new_goals
 
     @property
@@ -389,3 +322,16 @@ class MyRosBridge():
     @property
     def odom(self):
         return self._my_odom
+
+    def change_goals_client(self, ng):
+        rospy.wait_for_service('change_goals')
+        mm = float2d()
+        for i, e in enumerate(ng):
+            m = float1d(e)
+            mm.data.append(m)
+        try:
+            add_two_ints = rospy.ServiceProxy('change_goals', ChangeGoals)
+            resp1 = add_two_ints(mm)
+            return resp1.success
+        except rospy.ServiceException as e:
+            print("Service call failed: %s"%e)

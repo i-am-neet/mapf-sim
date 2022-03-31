@@ -65,9 +65,9 @@ parser.add_argument('--target_update_interval', type=int, default=1, metavar='N'
                     help='Value target update per no. of updates per step (default: 1)')
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 1000000)')
-parser.add_argument('--goals_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_goals_one.cfg",
+parser.add_argument('--goals_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_goals.cfg",
                     help="config file of goals' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_goals_one.cfg')")
-parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_poses_one.cfg",
+parser.add_argument('--poses_init_file', type=str, default=os.environ.get('HOME')+"/mapf_ws/src/gazebo/robot_gazebo/config/init_poses.cfg",
                     help="config file of poses' init info (default: '$HOME/mapf_ws/src/gazebo/robot_gazebo/config/init_poses_one.cfg')")
 # parser.add_argument('--resize_observation', type=int, default=64, metavar='N',
 #                     help='Resize observation size (default: 64)')
@@ -154,6 +154,8 @@ for i_episode in itertools.count(1):
     episode_steps = 0
     done = False
     state = env.reset()
+    if state is None:
+        continue
     plan_len = env.planner_benchmark
 
     for _ in range(args.max_episode_steps):
@@ -200,6 +202,10 @@ for i_episode in itertools.count(1):
 
         _expert_action = env.expert_action()
         next_state, reward, done, info = env.step(action)
+
+        if not all([next_state, reward, done, info]):
+            continue
+
         episode_steps += 1
         total_numsteps += 1
         episode_reward += reward
@@ -234,6 +240,8 @@ for i_episode in itertools.count(1):
         episodes = 10
         for _ in range(episodes):
             state = env.reset()
+            if state is None:
+                continue
             episode_reward = 0
             done = False
             plan_len = env.planner_benchmark

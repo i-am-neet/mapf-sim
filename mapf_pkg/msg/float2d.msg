@@ -1,0 +1,1 @@
+float1d[] data

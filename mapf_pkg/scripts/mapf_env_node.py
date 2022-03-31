@@ -15,8 +15,8 @@ from utils.env_util import EventCounter
 import torch
 from torchvision import transforms
 
-ARRIVED_RANGE_XY = 0.08               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
-ARRIVED_RANGE_YAW = math.radians(5)   # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
+ARRIVED_RANGE_XY = 0.1               # |robots' position - goal's position| < ARRIVED_RANGE_XY (meter)
+ARRIVED_RANGE_YAW = math.radians(10)   # |robots' angle - goal's angle| < ARRIVED_RANGE_YAW (degrees to radians)
 
 MAX_SPEED = abs(1.0) # maximum speed (m/s)
 
@@ -27,8 +27,7 @@ class StageEnv(gym.Env):
                        robot_radius,
                        init_poses,
                        goals,
-                       map_resolution,
-                       resize_observation=0):
+                       map_resolution):
 
         if len(goals) != robots_num:
             raise ValueError("The amount of goals '%d' must equal to robots_num '%d" %(len(goals), robots_num))
@@ -52,9 +51,8 @@ class StageEnv(gym.Env):
         self.current_robot_num = current_robot_num
         self.robots_num = robots_num
         self.robot_radius = robot_radius
-        self.resize_observation = resize_observation
         self._planner_benchmark = None
-
+        self.nickname = "NEET"
         self.observation_space = spaces.Dict(map=spaces.Box(low=0, high=1, shape=(1, self.ros.map_height, self.ros.map_width), dtype=np.float32),
                                              lidar=spaces.Box(low=0, high=1, shape=(self.ros.lidar_range_size,), dtype=np.float32),
                                              goal=spaces.Box(low=0, high=math.pi, shape=(2,)),
@@ -69,15 +67,15 @@ class StageEnv(gym.Env):
         Show the observation that contains local_map, agents_map, planner_map, and neighbors_goal_map
         """
         _map_0 = self.ros.get_observation['map'][0].astype('uint8')
-        # _map_1 = self.ros.get_observation['map'][1].astype('uint8')
-        # _map_2 = self.ros.get_observation['map'][2].astype('uint8')
-        # _map_3 = self.ros.get_observation['map'][3].astype('uint8')
-        # _im_tile = utils.concat_tile_resize([[_map_0, _map_1],
-        #                                      [_map_2, _map_3]],
-        #                                      text=[["", ""],
-        #                                          ["", ""]])
-        # cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
-        cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _map_0)
+        _map_1 = self.ros.get_observation['map'][1].astype('uint8')
+        _map_2 = self.ros.get_observation['map'][2].astype('uint8')
+        _map_3 = self.ros.get_observation['map'][3].astype('uint8')
+        _im_tile = utils.concat_tile_resize([[_map_0, _map_1],
+                                             [_map_2, _map_3]],
+                                             text=[["", ""],
+                                                 ["", ""]])
+        cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _im_tile)
+        # cv2.imshow("Observation of Agent {}".format(self.current_robot_num), _map_0)
         cv2.waitKey(1)
 
     @EventCounter(schedules=[20, 80, 200, 400, 800, 1400, 2200], matters=[0.4, 0.6, 0.9, 1.2, 1.6, 2.0, 2.4, 2.8])
@@ -94,8 +92,7 @@ class StageEnv(gym.Env):
 
         self.ros.clear_map()
 
-        # self.goals = self.ros.get_new_poses()
-        self.goals = [(0, 0, 0)]
+        self.goals = self.ros.get_new_poses()
         _init_poses = self.ros.get_new_poses(refs=self.goals, min_d=0.28, max_d=self.reset.matter)
         self.ros.goals = self.goals
         self.ros.reset_poses(_init_poses, self.goals)
@@ -107,7 +104,9 @@ class StageEnv(gym.Env):
         o = self.ros.get_observation
         if o is None:
             self.reset()
-        _o = self.normalize_observation(o)
+            return None
+        else:
+            _o = self.normalize_observation(o)
 
         self._planner_benchmark = _o['plan_len'].squeeze()
 
@@ -115,6 +114,8 @@ class StageEnv(gym.Env):
 
     def step(self, u):
 
+        r = 0
+        print('My nick name is {}'.format(self.nickname))
         # check move_base is working
         if not self.ros.check_movebase:
             self.reset()
@@ -126,13 +127,16 @@ class StageEnv(gym.Env):
             raise ValueError("action size ERROR.")
 
         # planner's direction reward
-        _p_x = self.ros.planner_path[0].pose.position.x
-        _p_y = self.ros.planner_path[0].pose.position.y
-        if any([_p_x, _p_y]) and any([u[0], u[1]]):
-            r = np.cos(utils.angle_between([_p_x, _p_y], [u[0], u[1]])) * 0.3 - 0.4
-        else:
-            # print("################## OMG ######################")
-            r = -0.01
+        if len(self.ros.planner_path) != 0:
+
+            _p_x = self.ros.planner_path[0].pose.position.x
+            _p_y = self.ros.planner_path[0].pose.position.y
+
+            if any([_p_x, _p_y]) and any([u[0], u[1]]):
+                r = np.cos(utils.angle_between([_p_x, _p_y], [u[0], u[1]])) * 0.3 - 0.4
+            else:
+                # print("################## OMG ######################")
+                r = -0.01
 
         # if utils.dist((u[0], u[1]), (0, 0)) < 0.05:
         #     print("V too small")
@@ -174,15 +178,17 @@ class StageEnv(gym.Env):
         o = self.ros.get_observation
         if o is None:
             self.reset()
-        _o = self.normalize_observation(o)
-        return _o, r, done, info
+            return None, None, None, None
+        else:
+            _o = self.normalize_observation(o)
+            return _o, r, done, info
 
     def close(self):
         self.ros.stop_robots()
         pass
 
     def __del__(self):
-        self.ros.stop_robots()
+        # self.ros.stop_robots()
         # Close cv
         cv2.destroyAllWindows()
 
